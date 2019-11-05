@@ -3,12 +3,10 @@ package repcrecdb;
 import java.util.ArrayList;
 
 public class TransactionManager {
-    ArrayList<DataManager> dms = new ArrayList<DataManager>();
+    ArrayList<DataManager> dms;
 
-    public TransactionManager() {
-        for (int i = 1; i <= 10; i++) {
-            dms.add(new DataManager(i));
-        }
+    public TransactionManager(ArrayList<DataManager> dms) {
+        this.dms = dms;
     }
 
     public void run() {}

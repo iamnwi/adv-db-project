@@ -7,8 +7,8 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
 class RepCRecDBTest {
-    @Test void appHasAGreeting() {
-        RepCRecDB classUnderTest = new RepCRecDB();
-        // assertNotNull(classUnderTest.main(), "app should have a greeting");
+    @Test void testInitialization() {
+        TransactionManager tm = RepCRecDB.init();
+        assertEquals(tm.dms.size(), 10);
     }
 }
