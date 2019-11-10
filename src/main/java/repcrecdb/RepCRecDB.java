@@ -1,6 +1,8 @@
 package repcrecdb;
 
 import java.util.ArrayList;
+import java.io.FileInputStream;
+import java.io.InputStream;
 
 public class RepCRecDB {
 
@@ -14,7 +16,16 @@ public class RepCRecDB {
 
     public static void main(String[] args) throws Exception {
         TransactionManager tm = init();
-        tm.queryState();
-        tm.dump();
+
+        // Get input stream, from file or standard input
+        InputStream is = null;
+        if (args.length == 1) {
+            String filePath = args[0];
+            is = new FileInputStream(filePath);
+        }
+        else {
+            is = System.in;
+        }
+        tm.run(is);
     }
 }
