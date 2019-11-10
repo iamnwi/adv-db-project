@@ -2,19 +2,26 @@ package repcrecdb;
 
 import java.io.InputStream;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.Scanner;
 
 public class TransactionManager {
     ArrayList<DataManager> dms;
+    HashMap<String, Transaction> transactions;
+    Integer ticks; // Mimic a ticking time
 
     public TransactionManager(ArrayList<DataManager> dms) {
+        ticks = 0;
         this.dms = dms;
+        transactions = new HashMap<String, Transaction>();
     }
 
     public void run(InputStream inputStream) {
         Scanner input = new Scanner(inputStream);
         try {
             while (input.hasNext()) {
+                ticks += 1;
                 parse(input.nextLine());
             }
         } finally {
@@ -64,14 +71,21 @@ public class TransactionManager {
                 if (args.length == 1)
                     recover(args[0]);
                 break;
+            case "queryState":
+                queryState();
+                break;
             default:
                 System.out.println("Unknown instruction");
         }
     }
 
-    public void begin(String transactionName) {}
+    public void begin(String transactionName) {
+        transactions.put(transactionName, new Transaction(transactionName, ticks));
+    }
 
-    public void beginRO(String transactionName) {}
+    public void beginRO(String transactionName) {
+        transactions.put(transactionName, new Transaction(transactionName, ticks, true));
+    }
 
     public void read(String transactionName, String varName) {}
 
@@ -90,9 +104,16 @@ public class TransactionManager {
     public void recover(String siteName) {}
 
     public void queryState() {
+        System.out.println(String.join("", Collections.nCopies(70, "-")));
         System.out.println("Transaction Manager");
+        System.out.println(String.join("", Collections.nCopies(70, "-")));
+
         System.out.println(this.toString());
+
+        System.out.println(String.join("", Collections.nCopies(70, "-")));
         System.out.println("Data Managers");
+        System.out.println(String.join("", Collections.nCopies(70, "-")));
+
         for (DataManager dm : dms) {
             System.out.println(dm.toString());
         }
@@ -101,6 +122,11 @@ public class TransactionManager {
     public void detectDeadLock() {}
 
     public String toString() {
-        return "";
+        StringBuilder state = new StringBuilder();
+        state.append("Transactions\n");
+        for (Transaction t : transactions.values()) {
+            state.append(String.format("- Name: %s%s\tBegin Time: %s\n", t.name, t.isReadOnly ? "(RO)" : "", t.beginTime));
+        }
+        return state.toString();
     }
 }
