@@ -18,7 +18,7 @@ class RepCRecDBTest {
 
     @Test void testInstrRead() {
         TransactionManager tm = RepCRecDB.init();
-        String instructions = "begin(T1)\nbegin(T2)\n";
+        String instructions = "begin(T1)\nbeginRO(T2)\n";
         InputStream is = new ByteArrayInputStream(instructions.getBytes(StandardCharsets.UTF_8));
         tm.run(is);
         assertEquals(tm.transactions.size(), 2);
@@ -29,7 +29,7 @@ class RepCRecDBTest {
         Transaction t2 = tm.transactions.get("T2");
         assertNotNull(t2);
         assertEquals(t2.name, "T2");
-        assertFalse(t2.isReadOnly);
+        assertTrue(t2.isReadOnly);
         assertTrue(t1.beginTime < t2.beginTime);
     }
 }
