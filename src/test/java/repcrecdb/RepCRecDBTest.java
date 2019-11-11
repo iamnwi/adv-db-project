@@ -14,6 +14,9 @@ class RepCRecDBTest {
     @Test void testInitialization() {
         TransactionManager tm = RepCRecDB.init();
         assertEquals(tm.dms.size(), 10);
+        for (DataManager dm : tm.dms) {
+            assertTrue(dm.isUp);
+        }
     }
 
     @Test void testInstrRead() {
@@ -31,5 +34,21 @@ class RepCRecDBTest {
         assertEquals(t2.name, "T2");
         assertTrue(t2.isReadOnly);
         assertTrue(t1.beginTime < t2.beginTime);
+    }
+
+    @Test void testInstrFail() {
+        TransactionManager tm = RepCRecDB.init();
+        String instructions = "fail(0)\nfail(2)";
+        InputStream is = new ByteArrayInputStream(instructions.getBytes(StandardCharsets.UTF_8));
+        DataManager dm0 = tm.dms.get(0);
+        DataManager dm2 = tm.dms.get(2);
+        dm0.lockTable.put("x2", new LockEntry(LockType.READ ,"T1"));
+        dm2.lockTable.put("x4", new LockEntry(LockType.WRITE ,"T2"));
+        
+        tm.run(is);
+        assertFalse(dm0.isUp);
+        assertEquals(dm0.lockTable.size(), 0);
+        assertFalse(dm2.isUp);
+        assertEquals(dm2.lockTable.size(), 0);
     }
 }

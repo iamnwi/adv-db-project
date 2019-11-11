@@ -65,7 +65,7 @@ public class TransactionManager {
                 break;
             case "fail":
                 if (args.length == 1)
-                    fail(args[0]);
+                    fail(Integer.parseInt(args[0]));
                 break;
             case "recover":
                 if (args.length == 1)
@@ -99,7 +99,9 @@ public class TransactionManager {
 
     public void end(String transactionName) {}
 
-    public void fail(String siteName) {}
+    public void fail(Integer siteIndex) {
+        dms.get(siteIndex).fail(ticks);
+    }
 
     public void recover(String siteName) {}
 
