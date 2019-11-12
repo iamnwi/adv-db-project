@@ -1,15 +1,15 @@
 package repcrecdb;
 
-import java.util.ArrayList;
+import java.util.HashMap;
 import java.io.FileInputStream;
 import java.io.InputStream;
 
 public class RepCRecDB {
 
     public static TransactionManager init() {
-        ArrayList<DataManager> dms = new ArrayList<DataManager>();
+        HashMap<Integer, DataManager> dms = new HashMap<Integer, DataManager>();
         for (int i = 1; i <= 10; i++) {
-            dms.add(new DataManager(i));
+            dms.put(i, new DataManager(i));
         }
         return new TransactionManager(dms);
     }
