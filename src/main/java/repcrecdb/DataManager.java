@@ -4,12 +4,33 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.TreeMap;
 
+enum LockType
+{ 
+    READ, WRITE;
+}
+
+class LockEntry {
+    public LockType lockType;
+    public String transactionName;
+    
+    public LockEntry(LockType lockType, String transactionName) {
+        this.lockType = lockType;
+        this.transactionName = transactionName;
+    }
+}
+
 public class DataManager {
     public int siteIndex;
-    public Map<Integer, Integer> dataTable;
+    public HashMap<Integer, Integer> dataTable;
+    public int lastDownTime;
+    public boolean isUp; // indicate whether this site is up or down
+    public HashMap<String, LockEntry> lockTable; // (varName, (lock type, transName))
 
     public DataManager(int index) {
         siteIndex = index;
+        isUp = true;
+        lastDownTime = 0;
+        lockTable = new HashMap<String, LockEntry>();
         dataTable = new HashMap<Integer, Integer>();
         for (int i = 1; i <= 20; i++) {
             if (i % 2 == 0 || 1 + (i%10) == siteIndex) {
@@ -22,7 +43,11 @@ public class DataManager {
     
     public void acquireLock() {}
 
-    public void fail() {}
+    public void fail(int currentTime) {
+        isUp = false;
+        lastDownTime = currentTime;
+        lockTable = new HashMap<String, LockEntry>();
+    }
 
     public void recover() {}
 
