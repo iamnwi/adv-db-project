@@ -9,6 +9,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.Map.Entry;
 
 class RepCRecDBTest {
     @Test void testInitialization() {
@@ -23,7 +24,7 @@ class RepCRecDBTest {
 
     @Test void testInstrRead() {
         TransactionManager tm = RepCRecDB.init();
-        String instructions = "begin(T1)\nbeginRO(T2)\n";
+        String instructions = "begin(T1)\nbegin(T2)\n";
         tm.run(stringToInputStream(instructions));
         assertEquals(tm.transactions.size(), 2);
         Transaction t1 = tm.transactions.get("T1");
@@ -33,15 +34,56 @@ class RepCRecDBTest {
         Transaction t2 = tm.transactions.get("T2");
         assertNotNull(t2);
         assertEquals(t2.name, "T2");
+        assertFalse(t2.isReadOnly);
+        assertTrue(t1.beginTime < t2.beginTime);
+    }
+
+    @Test void testInstrReadRO() {
+        TransactionManager tm = RepCRecDB.init();
+        String instructions = "beginRO(T1)\nbeginRO(T2)\n";
+        for (DataManager dm: tm.dms.values()) {
+            assertEquals(0, dm.snapshots.size());
+        }
+
+        // All up sites should have two snapshots after creating two transactions
+        tm.run(stringToInputStream(instructions));
+        assertEquals(2, tm.transactions.size());
+        Transaction t1 = tm.transactions.get("T1");
+        assertNotNull(t1);
+        assertEquals("T1", t1.name);
+        assertTrue(t1.isReadOnly);
+        Transaction t2 = tm.transactions.get("T2");
+        assertNotNull(t2);
+        assertEquals("T2", t2.name);
         assertTrue(t2.isReadOnly);
         assertTrue(t1.beginTime < t2.beginTime);
+
+        for (DataManager dm: tm.dms.values()) {
+            assertEquals(2, dm.snapshots.size());
+            assertNotNull(dm.snapshots.get(tm.ticks-1));
+            assertNotNull(dm.snapshots.get(tm.ticks));
+        }
+
+        // If all sites are down, the readRO instruction should be blocked
+        instructions = "beginRO(T3)\n";
+        for (Entry<Integer, SiteStatus> statusEntry: tm.siteStatusTable.entrySet()) {
+            SiteStatus siteStatus = statusEntry.getValue();
+            siteStatus.status = RunningStatus.DOWN;
+            tm.siteStatusTable.put(statusEntry.getKey(), siteStatus);
+        }
+        tm.run(stringToInputStream(instructions));
+        assertEquals(2, tm.transactions.size());
+        assertNull(tm.transactions.get("T3"));
+        for (DataManager dm: tm.dms.values()) {
+            assertEquals(2, dm.snapshots.size());
+        }
     }
 
     @Test void testInstrFail() {
         TransactionManager tm = RepCRecDB.init();
         String instructions = "fail(1)";
         DataManager dm1 = tm.dms.get(1);
-        dm1.lockTable.put("x2", new LockEntry(LockType.READ ,"T1"));
+        dm1.lockTable.put(2, new LockEntry(LockType.READ ,"T1"));
         assertEquals(RunningStatus.UP, tm.siteStatusTable.get(dm1.siteID).status);
         assertEquals(1, dm1.lockTable.size());
 
