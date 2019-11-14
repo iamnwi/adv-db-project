@@ -1,3 +1,5 @@
+![](https://github.com/actions/hello-world/workflows/Greet%20Everyone/badge.svg?branch=master)
+
 # RepCRec Distributed Database
 Fall 2019 Advanced Database Course Project
 
