@@ -1,20 +1,41 @@
 package repcrecdb;
 
 import java.io.InputStream;
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Scanner;
 
+enum RunningStatus
+{ 
+    UP, DOWN;
+}
+
+class SiteStatus {
+    public RunningStatus status;
+    public int lastDownTime;
+
+    public SiteStatus(RunningStatus status, int currentTime) {
+        this.status = status;
+        this.lastDownTime = currentTime;
+    }
+}
+
 public class TransactionManager {
-    ArrayList<DataManager> dms;
+    HashMap<Integer, DataManager> dms;
     HashMap<String, Transaction> transactions;
+    HashMap<Integer, SiteStatus> siteStatusTable;
     Integer ticks; // Mimic a ticking time
 
-    public TransactionManager(ArrayList<DataManager> dms) {
+    public TransactionManager(HashMap<Integer, DataManager> dms) {
         ticks = 0;
         this.dms = dms;
         transactions = new HashMap<String, Transaction>();
+
+        // Initialize the status for each site as up
+        siteStatusTable = new HashMap<Integer, SiteStatus>();
+        for (Integer siteID : dms.keySet()) {
+            siteStatusTable.put(siteID, new SiteStatus(RunningStatus.UP, ticks));
+        }
     }
 
     public void run(InputStream inputStream) {
@@ -69,7 +90,7 @@ public class TransactionManager {
                 break;
             case "recover":
                 if (args.length == 1)
-                    recover(args[0]);
+                    recover(Integer.parseInt(args[0]));
                 break;
             case "queryState":
                 queryState();
@@ -92,18 +113,23 @@ public class TransactionManager {
     public void write(String transactionName, String varName, String val) {}
 
     public void dump() {
-        for (DataManager dm : dms) {
+        for (DataManager dm : dms.values()) {
             System.out.print(dm.toString());
         }
     }
 
     public void end(String transactionName) {}
 
-    public void fail(Integer siteIndex) {
-        dms.get(siteIndex).fail(ticks);
+    public void fail(Integer siteID) {
+        siteStatusTable.put(siteID, new SiteStatus(RunningStatus.DOWN, ticks));
+        dms.get(siteID).fail();
     }
 
-    public void recover(String siteName) {}
+    public void recover(Integer siteID) {
+        int lastDownTime = siteStatusTable.get(siteID).lastDownTime;
+        siteStatusTable.put(siteID, new SiteStatus(RunningStatus.UP, lastDownTime));
+        dms.get(siteID).recover();
+    }
 
     public void queryState() {
         System.out.println(String.join("", Collections.nCopies(70, "-")));
@@ -116,7 +142,7 @@ public class TransactionManager {
         System.out.println("Data Managers");
         System.out.println(String.join("", Collections.nCopies(70, "-")));
 
-        for (DataManager dm : dms) {
+        for (DataManager dm : dms.values()) {
             System.out.println(dm.toString());
         }
     }

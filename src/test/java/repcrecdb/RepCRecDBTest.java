@@ -14,16 +14,17 @@ class RepCRecDBTest {
     @Test void testInitialization() {
         TransactionManager tm = RepCRecDB.init();
         assertEquals(tm.dms.size(), 10);
-        for (DataManager dm : tm.dms) {
-            assertTrue(dm.isUp);
+        for (DataManager dm : tm.dms.values()) {
+            SiteStatus siteStatus = tm.siteStatusTable.get(dm.siteID);
+            assertEquals(siteStatus.status, RunningStatus.UP);
+            assertEquals(siteStatus.lastDownTime, tm.ticks);
         }
     }
 
     @Test void testInstrRead() {
         TransactionManager tm = RepCRecDB.init();
         String instructions = "begin(T1)\nbeginRO(T2)\n";
-        InputStream is = new ByteArrayInputStream(instructions.getBytes(StandardCharsets.UTF_8));
-        tm.run(is);
+        tm.run(stringToInputStream(instructions));
         assertEquals(tm.transactions.size(), 2);
         Transaction t1 = tm.transactions.get("T1");
         assertNotNull(t1);
@@ -38,17 +39,43 @@ class RepCRecDBTest {
 
     @Test void testInstrFail() {
         TransactionManager tm = RepCRecDB.init();
-        String instructions = "fail(0)\nfail(2)";
-        InputStream is = new ByteArrayInputStream(instructions.getBytes(StandardCharsets.UTF_8));
-        DataManager dm0 = tm.dms.get(0);
-        DataManager dm2 = tm.dms.get(2);
-        dm0.lockTable.put("x2", new LockEntry(LockType.READ ,"T1"));
-        dm2.lockTable.put("x4", new LockEntry(LockType.WRITE ,"T2"));
-        
-        tm.run(is);
-        assertFalse(dm0.isUp);
-        assertEquals(dm0.lockTable.size(), 0);
-        assertFalse(dm2.isUp);
-        assertEquals(dm2.lockTable.size(), 0);
+        String instructions = "fail(1)";
+        DataManager dm1 = tm.dms.get(1);
+        dm1.lockTable.put("x2", new LockEntry(LockType.READ ,"T1"));
+        assertEquals(RunningStatus.UP, tm.siteStatusTable.get(dm1.siteID).status);
+        assertEquals(1, dm1.lockTable.size());
+
+        tm.run(stringToInputStream(instructions));
+        assertEquals(RunningStatus.DOWN, tm.siteStatusTable.get(dm1.siteID).status);
+        assertEquals(tm.ticks, tm.siteStatusTable.get(dm1.siteID).lastDownTime);
+        assertEquals(0, dm1.lockTable.size());
+    }
+
+    @Test void testInstrRecover() {
+        TransactionManager tm = RepCRecDB.init();
+        DataManager dm1 = tm.dms.get(1);
+        String instructions = "fail(1)";
+        tm.run(stringToInputStream(instructions));
+        int lastDownTime = tm.siteStatusTable.get(dm1.siteID).lastDownTime;
+        assertEquals(tm.ticks, lastDownTime);
+        assertEquals(RunningStatus.DOWN, tm.siteStatusTable.get(dm1.siteID).status);
+        for (boolean readableStatus: dm1.repVarReadableTable.values()) {
+            assertTrue(readableStatus);
+        }
+
+        String recoverInstr = "recover(1)";
+        tm.run(stringToInputStream(recoverInstr));
+        assertEquals(RunningStatus.UP, tm.siteStatusTable.get(dm1.siteID).status);
+        assertEquals(lastDownTime, tm.siteStatusTable.get(dm1.siteID).lastDownTime);
+        for (boolean readableStatus: dm1.repVarReadableTable.values()) {
+            assertFalse(readableStatus);
+        }
+    }
+
+    // *************************************
+    //  U T I L I T Y   F U N C T I O N S 
+    // *************************************
+    InputStream stringToInputStream(String str) {
+        return new ByteArrayInputStream(str.getBytes(StandardCharsets.UTF_8));
     }
 }
