@@ -1,4 +1,4 @@
-![](https://github.com/actions/hello-world/workflows/Greet%20Everyone/badge.svg?branch=master)
+![](https://github.com/iamnwi/adv-db-project/workflows/gradle/badge.svg?branch=master)
 
 # RepCRec Distributed Database
 Fall 2019 Advanced Database Course Project
