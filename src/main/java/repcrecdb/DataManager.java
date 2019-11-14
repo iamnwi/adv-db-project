@@ -22,12 +22,14 @@ class LockEntry {
 public class DataManager {
     public int siteID;
     public HashMap<Integer, Integer> dataTable;
-    public HashMap<String, LockEntry> lockTable; // (varName, (lock type, transName))
-    public HashMap<Integer, Boolean> repVarReadableTable; // (varName, isReadable?)
+    public HashMap<Integer, LockEntry> lockTable; // (varName, (lock type, transName))
+    public HashMap<Integer, Boolean> repVarReadableTable; // (varID, isReadable?)
+    public HashMap<Integer, HashMap<Integer, Integer>> snapshots; // (time, map(varID, val))
 
     public DataManager(int index) {
         siteID = index;
-        lockTable = new HashMap<String, LockEntry>();
+        lockTable = new HashMap<Integer, LockEntry>();
+        snapshots = new HashMap<Integer, HashMap<Integer, Integer>>();
 
         dataTable = new HashMap<Integer, Integer>();
         for (int i = 1; i <= 20; i++) {
@@ -50,7 +52,7 @@ public class DataManager {
     public void acquireLock() {}
 
     public void fail() {
-        lockTable = new HashMap<String, LockEntry>();
+        lockTable.clear();
     }
 
     public void recover() {
@@ -64,6 +66,10 @@ public class DataManager {
 
     public void write() {
         // TODO: if the accessed var is a replicated variables, set its readability to TRUE
+    }
+
+    public void takeSnapshot(int currentTime) {
+        snapshots.put(currentTime, dataTable);
     }
 
     public String queryState() {
