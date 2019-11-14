@@ -24,12 +24,12 @@ public class DataManager {
     public HashMap<Integer, Integer> dataTable;
     public HashMap<Integer, LockEntry> lockTable; // (varName, (lock type, transName))
     public HashMap<Integer, Boolean> repVarReadableTable; // (varID, isReadable?)
-    public HashMap<Integer, HashMap<Integer, Integer>> snapshots; // (time, map(varID, val))
+    public TreeMap<Integer, HashMap<Integer, Integer>> snapshots; // (time, map(varID, val))
 
     public DataManager(int index) {
         siteID = index;
         lockTable = new HashMap<Integer, LockEntry>();
-        snapshots = new HashMap<Integer, HashMap<Integer, Integer>>();
+        snapshots = new TreeMap<Integer, HashMap<Integer, Integer>>();
 
         dataTable = new HashMap<Integer, Integer>();
         for (int i = 1; i <= 20; i++) {
@@ -63,6 +63,12 @@ public class DataManager {
     }
 
     public void read() {}
+
+    public Integer readRO(int varID, int transBeginTime) {
+        HashMap<Integer, Integer> snapshot = snapshots.get(transBeginTime);
+        if (snapshot == null) return null;
+        return snapshot.get(varID);
+    }
 
     public void write() {
         // TODO: if the accessed var is a replicated variables, set its readability to TRUE

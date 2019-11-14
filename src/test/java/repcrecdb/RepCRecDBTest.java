@@ -7,9 +7,10 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
+import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
-import java.util.Map.Entry;
 
 class RepCRecDBTest {
     @Test void testInitialization() {
@@ -22,7 +23,7 @@ class RepCRecDBTest {
         }
     }
 
-    @Test void testInstrRead() {
+    @Test void testInstrBegin() {
         TransactionManager tm = RepCRecDB.init();
         String instructions = "begin(T1)\nbegin(T2)\n";
         tm.run(stringToInputStream(instructions));
@@ -38,7 +39,7 @@ class RepCRecDBTest {
         assertTrue(t1.beginTime < t2.beginTime);
     }
 
-    @Test void testInstrReadRO() {
+    @Test void testInstrBeginRO() {
         TransactionManager tm = RepCRecDB.init();
         String instructions = "beginRO(T1)\nbeginRO(T2)\n";
         for (DataManager dm: tm.dms.values()) {
@@ -64,13 +65,9 @@ class RepCRecDBTest {
             assertNotNull(dm.snapshots.get(tm.ticks));
         }
 
-        // If all sites are down, the readRO instruction should be blocked
+        // If some sites are down, the readRO instruction should be blocked
         instructions = "beginRO(T3)\n";
-        for (Entry<Integer, SiteStatus> statusEntry: tm.siteStatusTable.entrySet()) {
-            SiteStatus siteStatus = statusEntry.getValue();
-            siteStatus.status = RunningStatus.DOWN;
-            tm.siteStatusTable.put(statusEntry.getKey(), siteStatus);
-        }
+        tm.siteStatusTable.put(1, new SiteStatus(RunningStatus.DOWN, tm.ticks));
         tm.run(stringToInputStream(instructions));
         assertEquals(2, tm.transactions.size());
         assertNull(tm.transactions.get("T3"));
@@ -112,6 +109,26 @@ class RepCRecDBTest {
         for (boolean readableStatus: dm1.repVarReadableTable.values()) {
             assertFalse(readableStatus);
         }
+    }
+
+    @Test void testInstrReadRO() {
+        ByteArrayOutputStream outContent = new ByteArrayOutputStream();
+        System.setOut(new PrintStream(outContent));
+
+        TransactionManager tm = RepCRecDB.init();
+        int nextSiteID = tm.nextSiteID;
+        tm.run(stringToInputStream("beginRO(T1)\nR(T1, x2)"));
+        assertEquals("x2: 20\n", outContent.toString());
+        assertEquals(nextSiteID+1, tm.nextSiteID);
+
+        tm.dms.get(nextSiteID+2).dataTable.put(2, 30);
+        tm.run(stringToInputStream("beginRO(T2)"));
+        tm.siteStatusTable.put(tm.nextSiteID, new SiteStatus(RunningStatus.DOWN, tm.ticks));
+        tm.run(stringToInputStream("R(T2, x2)"));
+        assertEquals("x2: 20\nx2: 30\n", outContent.toString());
+        assertEquals(nextSiteID+3, tm.nextSiteID);
+
+        System.setOut(System.out);
     }
 
     // *************************************
