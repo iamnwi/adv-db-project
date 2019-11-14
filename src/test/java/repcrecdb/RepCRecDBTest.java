@@ -131,10 +131,45 @@ class RepCRecDBTest {
         System.setOut(System.out);
     }
 
+    @Test void testInstrRead() {
+        ByteArrayOutputStream outContent = new ByteArrayOutputStream();
+        System.setOut(new PrintStream(outContent));
+
+        // Read replicated data
+        TransactionManager tm = RepCRecDB.init();
+        tm.run(stringToInputStream("begin(T1)\nR(T1, x2)"));
+        assertEquals("x2: 20", getLastLineFromOutput(outContent.toString()));
+
+        tm.dms.get(tm.nextSiteID).dataTable.put(2, 30);
+        tm.run(stringToInputStream("begin(T2)\nR(T2, x2)"));
+        assertEquals("x2: 30", getLastLineFromOutput(outContent.toString()));
+
+        // Read non-replicated data
+        tm.run(stringToInputStream("R(T1, x1)"));
+        assertEquals("x1: 10", getLastLineFromOutput(outContent.toString()));
+
+        tm.run(stringToInputStream("R(T2, x1)"));
+        assertEquals("x1: 10", getLastLineFromOutput(outContent.toString()));
+
+        tm.dms.get(2).lockTable.put(1, new LockEntry(LockType.WRITE, "T1"));
+        tm.run(stringToInputStream("R(T1, x1)"));  // Should be blocked
+        assertEquals(1, tm.instructionBuffer.size());
+
+        tm.run(stringToInputStream("R(T2, x1)")); // Should be blocked
+        assertEquals(2, tm.instructionBuffer.size());
+
+        System.setOut(System.out);
+    }
+
     // *************************************
     //  U T I L I T Y   F U N C T I O N S 
     // *************************************
     InputStream stringToInputStream(String str) {
         return new ByteArrayInputStream(str.getBytes(StandardCharsets.UTF_8));
+    }
+
+    String getLastLineFromOutput(String str) {
+        String[] lines = str.split("\n");
+        return lines[lines.length-1];
     }
 }

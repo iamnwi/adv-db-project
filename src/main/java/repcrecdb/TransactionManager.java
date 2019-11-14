@@ -28,7 +28,7 @@ public class TransactionManager {
     HashMap<Integer, SiteStatus> siteStatusTable;
     LinkedList<String> instructionBuffer;
     Integer ticks; // Mimic a ticking time
-    int nextSiteID; // site ID from 1 to 10
+    int nextSiteID; // site ID from 1 to 10, workload balancing for replicated data
 
     public TransactionManager(HashMap<Integer, DataManager> dms) {
         ticks = 0;
@@ -45,36 +45,31 @@ public class TransactionManager {
     }
 
     public void run(InputStream inputStream) {
-        // Read all commands into command buffer
         Scanner input = new Scanner(inputStream);
         try {
-            while (input.hasNext()) {
+            while (!instructionBuffer.isEmpty() || input.hasNext()) {
                 instructionBuffer.add(input.nextLine());
-            }
-        } finally {
-            input.close();
-        }
-
-        // Execute instructions in instruction buffer until one that 
-        // is not blocked
-        boolean allBlocked = true;
-        while (!instructionBuffer.isEmpty()) {
-            for (int i = 0; i < instructionBuffer.size(); i++) {
-                String instr = instructionBuffer.get(i);
                 ticks += 1;
-                if (parse(instr)) {
-                    instructionBuffer.remove(i);
-                    allBlocked = false;
+                // Execute instructions in instruction buffer until one that 
+                // is not blocked
+                boolean allBlocked = true;
+                for (int i = 0; i < instructionBuffer.size(); i++) {
+                    String instr = instructionBuffer.get(i);
+                    if (parse(instr)) {
+                        instructionBuffer.remove(i);
+                        allBlocked = false;
+                        break;
+                    }
+                }
+                if (allBlocked && !input.hasNext()) {
+                    System.out.println("All following instructions are blocked");
+                    System.out.println(instructionBuffer.toString());
                     break;
-                } else {
-                    ticks -= 1;
                 }
             }
-            if (allBlocked) {
-                System.out.println("All following instructions are blocked");
-                System.out.println(instructionBuffer.toString());
-                return;
-            }
+        }
+        finally {
+            input.close();
         }
     }
 
@@ -130,30 +125,49 @@ public class TransactionManager {
     }
 
     public boolean read(String transactionName, String varName) {
+        /*
+            TODO:
+            For situation W(T1, x1, 10)R(T1, x1), R should be blocked until T1 commits.
+            So, we can add all instructions of T1 that blocked by its first W operator into T1's
+            instructions and execute them at once when T1 commits.
+        */
         Transaction t = transactions.get(transactionName);
         if (t == null) return false;
         int varID = Integer.parseInt(varName.substring(1));
-        int siteID = findNextSite();
+        boolean isReplicatedData = varID % 2 == 0;
+        int siteID = -1;
+        if (isReplicatedData) {
+            siteID = findNextSite();
+        } else {
+            int targetSiteID = (varID % 10) + 1;
+            if (siteStatusTable.get(targetSiteID).status == RunningStatus.UP) {
+                siteID = targetSiteID;
+            }
+        }
         if (siteID == -1) return false;
 
         Integer val = null;
-        if (t.isReadOnly) {
-            int upCnt = getUpSiteCount();
-            int tryCnt = 1;
-            val = dms.get(siteID).readRO(varID, t.beginTime);
-            while (val == null) {
-                if (tryCnt >= upCnt) break;
-                siteID = findNextSite();
-                tryCnt += 1;
+        int upCnt = getUpSiteCount();
+        int tryCnt = 1;
+        while (val == null) {
+            if (t.isReadOnly) {
                 val = dms.get(siteID).readRO(varID, t.beginTime);
+            } else {
+                boolean acquireLockSuc = dms.get(siteID).acquireLock(transactionName ,varID, LockType.READ);
+                if (acquireLockSuc) {
+                    val = dms.get(siteID).read(transactionName, varID);
+                }
             }
-        } else {
-            // TODO: implement read logic for normal read
+            if (!isReplicatedData || tryCnt >= upCnt) break;
+            siteID = findNextSite();
+            tryCnt += 1;
         }
         
         if (val != null) {
             System.out.println(String.format("%s: %d", varName, val));
-            nextSiteID = siteID+1;
+            if (isReplicatedData) {
+                nextSiteID = siteID+1;
+            }
         }
 
         return !(val == null);
@@ -207,7 +221,7 @@ public class TransactionManager {
     //  U T I L I T Y   F U N C T I O N S 
     // *************************************
 
-    // Balance the workload of each site
+    // Balance the workload of replicated data accessing
     public int findNextSite() {
         int maxSiteID = 10;
         int tryCnt = 0;

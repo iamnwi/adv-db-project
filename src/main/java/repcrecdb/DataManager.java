@@ -12,10 +12,12 @@ enum LockType
 class LockEntry {
     public LockType lockType;
     public String transactionName;
+    public boolean hasPendingWrite; // given W1(x1)R2(x1), avoid R2 read before W1
 
     public LockEntry(LockType lockType, String transactionName) {
         this.lockType = lockType;
         this.transactionName = transactionName;
+        this.hasPendingWrite = false;
     }
 }
 
@@ -46,10 +48,22 @@ public class DataManager {
             }
         }
     }
-
-    public void checkLock() {}
     
-    public void acquireLock() {}
+    public boolean acquireLock(String transactionName, int varID, LockType lockType) {
+        if (!dataTable.containsKey(varID)) return false;
+
+        boolean suc = false;
+        LockEntry lockEntry = lockTable.get(varID);
+        if (lockEntry == null 
+        || (lockEntry.lockType == LockType.READ && !lockEntry.hasPendingWrite)) {
+            lockTable.put(varID, new LockEntry(lockType, transactionName));
+            suc = true;
+        }
+        else if (lockType == LockType.WRITE) {
+            lockEntry.hasPendingWrite = true;
+        }
+        return suc;
+    }
 
     public void fail() {
         lockTable.clear();
@@ -62,7 +76,17 @@ public class DataManager {
         }
     }
 
-    public void read() {}
+    public Integer read(String transactionName, int varID) {
+        LockEntry lockEntry = lockTable.get(varID);
+        Integer val = null;
+        if (lockEntry != null 
+            && lockEntry.transactionName == transactionName 
+            && (lockEntry.lockType == LockType.READ))
+        {
+            val = dataTable.get(varID);
+        }
+        return val;
+    }
 
     public Integer readRO(int varID, int transBeginTime) {
         HashMap<Integer, Integer> snapshot = snapshots.get(transBeginTime);
