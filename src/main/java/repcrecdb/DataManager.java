@@ -48,21 +48,27 @@ public class DataManager {
             }
         }
     }
+
+    public boolean checkLock(String transactionName, int varID, LockType lockType) {
+        LockEntry lockEntry = lockTable.get(varID);
+        boolean suc = lockEntry == null
+            || (lockEntry.lockType == LockType.READ && !lockEntry.hasPendingWrite)
+            || (lockEntry.transactionName.equals(transactionName)
+                && lockEntry.lockType == LockType.READ
+                && lockType == LockType.WRITE);
+        if (!suc && lockType == LockType.WRITE) {
+            lockTable.get(varID).hasPendingWrite = true;
+        }
+        return suc;
+    }
     
     public boolean acquireLock(String transactionName, int varID, LockType lockType) {
         if (!dataTable.containsKey(varID)) return false;
-
-        boolean suc = false;
-        LockEntry lockEntry = lockTable.get(varID);
-        if (lockEntry == null 
-        || (lockEntry.lockType == LockType.READ && !lockEntry.hasPendingWrite)) {
+        if (checkLock(transactionName, varID, lockType)) {
             lockTable.put(varID, new LockEntry(lockType, transactionName));
-            suc = true;
+            return true;
         }
-        else if (lockType == LockType.WRITE) {
-            lockEntry.hasPendingWrite = true;
-        }
-        return suc;
+        return false;
     }
 
     public void fail() {
@@ -79,9 +85,9 @@ public class DataManager {
     public Integer read(String transactionName, int varID) {
         LockEntry lockEntry = lockTable.get(varID);
         Integer val = null;
-        if (lockEntry != null 
-            && lockEntry.transactionName == transactionName 
-            && (lockEntry.lockType == LockType.READ))
+        if (lockEntry != null
+            && lockEntry.transactionName.equals(transactionName)
+            && lockEntry.lockType == LockType.READ)
         {
             val = dataTable.get(varID);
         }
@@ -94,8 +100,19 @@ public class DataManager {
         return snapshot.get(varID);
     }
 
-    public void write() {
-        // TODO: if the accessed var is a replicated variables, set its readability to TRUE
+    public void write(String transactionName, int varID, int val) {
+        LockEntry lockEntry = lockTable.get(varID);
+        if (lockEntry != null
+            && lockEntry.transactionName.equals(transactionName)
+            && lockEntry.lockType == LockType.WRITE)
+        {
+            dataTable.put(varID, val);
+            // A replicated variable is non-readable after recovery
+            // However, once we write it, it is readable then
+            if (varID % 2 == 0) {
+                repVarReadableTable.put(varID, true);
+            }
+        }
     }
 
     public void takeSnapshot(int currentTime) {

@@ -161,6 +161,42 @@ class RepCRecDBTest {
         System.setOut(System.out);
     }
 
+    @Test void testInstrWrite() {
+        ByteArrayOutputStream outContent = new ByteArrayOutputStream();
+        System.setOut(new PrintStream(outContent));
+
+        // Read-Write replicated data
+        TransactionManager tm = RepCRecDB.init();
+        tm.run(stringToInputStream("begin(T1)\nR(T1, x2)"));
+        assertEquals("x2: 20", getLastLineFromOutput(outContent.toString()));
+        int nextSiteID = tm.nextSiteID;
+        tm.run(stringToInputStream("W(T1, x2, 200)"));
+        assertEquals(20, tm.dms.get(nextSiteID).dataTable.get(2));
+        assertEquals(200, tm.transactions.get("T1").writes.get(2));
+
+        // Another T which reads x2 should be blocked
+        assertEquals(0, tm.instructionBuffer.size());
+        tm.run(stringToInputStream("begin(T2)\nR(T2, x2)"));
+        assertEquals(1, tm.instructionBuffer.size());
+
+        // Read-Write-Read non-replicated data
+        outContent.reset();
+        tm.run(stringToInputStream("R(T1, x1)"));
+        assertTrue(outContent.toString().contains("x1: 10"));
+        tm.run(stringToInputStream("W(T1, x1, 100)"));
+        assertEquals(10, tm.dms.get(2).dataTable.get(1));
+        assertEquals(100, tm.transactions.get("T1").writes.get(1));
+
+        // T Read-Write-Read data, the last Read reads from T's local write copy
+        outContent.reset();
+        tm.run(stringToInputStream("begin(T3)\nR(T3, x4)\n"));
+        assertTrue(outContent.toString().contains("x4: 40"));
+        tm.run(stringToInputStream("W(T3, x4, 400)\nR(T3, x4)\n"));
+        assertTrue(outContent.toString().contains("x4: 400"));
+
+        System.setOut(System.out);
+    }
+
     // *************************************
     //  U T I L I T Y   F U N C T I O N S 
     // *************************************
