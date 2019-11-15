@@ -47,8 +47,10 @@ public class TransactionManager {
     public void run(InputStream inputStream) {
         Scanner input = new Scanner(inputStream);
         try {
-            while (!instructionBuffer.isEmpty() || input.hasNext()) {
-                instructionBuffer.add(input.nextLine());
+            while (!instructionBuffer.isEmpty() || input.hasNextLine()) {
+                if (input.hasNextLine()) {
+                    instructionBuffer.add(input.nextLine());
+                }
                 ticks += 1;
                 // Execute instructions in instruction buffer until one that 
                 // is not blocked
@@ -61,7 +63,7 @@ public class TransactionManager {
                         break;
                     }
                 }
-                if (allBlocked && !input.hasNext()) {
+                if (allBlocked && !input.hasNextLine()) {
                     System.out.println("All following instructions are blocked");
                     System.out.println(instructionBuffer.toString());
                     break;
@@ -91,7 +93,7 @@ public class TransactionManager {
             case "R":
                 return (args.length == 2) && read(args[0], args[1]);
             case "W":
-                return (args.length == 3) && write(args[0], args[1], args[2]);
+                return (args.length == 3) && write(args[0], args[1], Integer.parseInt(args[2]));
             case "dump":
                 return dump();
             case "end":
@@ -125,12 +127,6 @@ public class TransactionManager {
     }
 
     public boolean read(String transactionName, String varName) {
-        /*
-            TODO:
-            For situation W(T1, x1, 10)R(T1, x1), R should be blocked until T1 commits.
-            So, we can add all instructions of T1 that blocked by its first W operator into T1's
-            instructions and execute them at once when T1 commits.
-        */
         Transaction t = transactions.get(transactionName);
         if (t == null) return false;
         int varID = Integer.parseInt(varName.substring(1));
@@ -150,12 +146,22 @@ public class TransactionManager {
         int upCnt = getUpSiteCount();
         int tryCnt = 1;
         while (val == null) {
+            DataManager dm = dms.get(siteID);
             if (t.isReadOnly) {
-                val = dms.get(siteID).readRO(varID, t.beginTime);
+                val = dm.readRO(varID, t.beginTime);
             } else {
-                boolean acquireLockSuc = dms.get(siteID).acquireLock(transactionName ,varID, LockType.READ);
+                boolean acquireLockSuc = dm.acquireLock(transactionName ,varID, LockType.READ);
                 if (acquireLockSuc) {
-                    val = dms.get(siteID).read(transactionName, varID);
+                    val = dm.read(transactionName, varID);
+                }
+            }
+            // For situation W(T1, x1, 10)R(T1, x1), R should read the local write value of T1.
+            if (val == null) {
+                LockEntry lockEntry = dm.lockTable.get(varID);
+                if (lockEntry.transactionName.equals(transactionName)
+                    && lockEntry.lockType == LockType.WRITE)
+                {
+                    val = this.transactions.get(transactionName).read(varID);
                 }
             }
             if (!isReplicatedData || tryCnt >= upCnt) break;
@@ -173,7 +179,37 @@ public class TransactionManager {
         return !(val == null);
     }
 
-    public boolean write(String transactionName, String varName, String val) { return true; }
+    public boolean write(String transactionName, String varName, int val) { 
+        int varID = Integer.parseInt(varName.substring(1));
+        if (varID % 2 == 0)
+        {
+            int accessibleLocks = 0;
+            for (Entry<Integer, SiteStatus> entry: siteStatusTable.entrySet()) {
+                DataManager dm = dms.get(entry.getKey());
+                if (entry.getValue().status == RunningStatus.UP 
+                    && dm.checkLock(transactionName, varID, LockType.WRITE))
+                {
+                    accessibleLocks += 1;
+                }
+            }
+            if (accessibleLocks == siteStatusTable.size()) {
+                for (Integer siteID: siteStatusTable.keySet()) {
+                    DataManager dm = dms.get(siteID);
+                    dm.acquireLock(transactionName, varID, LockType.WRITE);
+                }
+                this.transactions.get(transactionName).writes.put(varID, val);
+            }
+        } else {
+            int siteID = (varID % 10) + 1;
+            DataManager dm = dms.get(siteID);
+            if (siteStatusTable.get(siteID).status == RunningStatus.UP
+                && dm.acquireLock(transactionName, varID, LockType.WRITE))
+            {
+                this.transactions.get(transactionName).writes.put(varID, val);
+            }
+        }
+        return true;
+    }
 
     public boolean dump() {
         for (DataManager dm : dms.values()) {

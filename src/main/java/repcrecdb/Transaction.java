@@ -8,7 +8,7 @@ public class Transaction {
     boolean isReadOnly;
     Integer beginTime;
     ArrayList<Integer> accessedSites;
-    HashMap<String, Integer> writes; // (varName, newVal)
+    HashMap<Integer, Integer> writes; // (varName, newVal)
 
     public Transaction(String name, Integer ticks) {
         this(name, ticks, false);
@@ -19,6 +19,10 @@ public class Transaction {
         this.isReadOnly = isReadOnly;
         beginTime = ticks;
         accessedSites = new ArrayList<Integer>();
-        writes = new HashMap<String, Integer>();
+        writes = new HashMap<Integer, Integer>();
+    }
+
+    public Integer read(int varID) {
+        return this.writes.get(varID);
     }
 }
