@@ -197,6 +197,33 @@ class RepCRecDBTest {
         System.setOut(System.out);
     }
 
+    @Test void testInstrEnd() {
+        ByteArrayOutputStream outContent = new ByteArrayOutputStream();
+        System.setOut(new PrintStream(outContent));
+        TransactionManager tm = RepCRecDB.init();
+
+        // write -> end -> commits
+        tm.run(stringToInputStream("begin(T1)\nW(T1, x2, 200)\nW(T1, x1, 100)\nend(T1)"));
+        assertEquals("T1 commits", getLastLineFromOutput(outContent.toString()));
+
+        // write -> fail -> recover -> end -> aborts
+        tm.run(stringToInputStream("begin(T1)\nW(T1, x2, 200)\nfail(1)\nrecover(1)\nW(T1, x1, 100)\nend(T1)"));
+        assertTrue(outContent.toString().contains("T1 aborts"));
+
+
+        // 2 Transactions write different variable, commits in order
+        tm = RepCRecDB.init();
+        tm.run(stringToInputStream("begin(T1)\nbegin(T2)\nW(T2, x2, 200)\nW(T1, x1, 100)\nend(T1)\nend(T2)"));
+        assertTrue(outContent.toString().contains("T1 commits\nT2 commits"));
+
+        // 2 Transactions write the same variable, one blocks another
+        // Commits in reversed order
+        tm.run(stringToInputStream("begin(T1)\nbegin(T2)\nW(T2, x2, 200)\nW(T1, x2, 100)\nend(T1)\nend(T2)"));
+        assertTrue(outContent.toString().contains("T2 commits\nT1 commits"));
+
+        System.setOut(System.out);
+    }
+
     // *************************************
     //  U T I L I T Y   F U N C T I O N S 
     // *************************************
