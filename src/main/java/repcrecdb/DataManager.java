@@ -1,8 +1,10 @@
 package repcrecdb;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.TreeMap;
+import java.util.Map.Entry;
 
 enum LockType
 { 
@@ -71,6 +73,18 @@ public class DataManager {
         return false;
     }
 
+    public void releaseLocks(String transactionName) {
+        ArrayList<Integer> releasedVarIDs = new ArrayList<Integer>();
+        for (Entry<Integer, LockEntry> entry: this.lockTable.entrySet()) {
+            if (entry.getValue().transactionName.equals(transactionName)) {
+                releasedVarIDs.add(entry.getKey());
+            }
+        }
+        for (Integer varID: releasedVarIDs) {
+            this.lockTable.remove(varID);
+        }
+    }
+
     public void fail() {
         lockTable.clear();
     }
@@ -100,7 +114,7 @@ public class DataManager {
         return snapshot.get(varID);
     }
 
-    public void write(String transactionName, int varID, int val) {
+    public boolean write(String transactionName, int varID, int val) {
         LockEntry lockEntry = lockTable.get(varID);
         if (lockEntry != null
             && lockEntry.transactionName.equals(transactionName)
@@ -112,7 +126,9 @@ public class DataManager {
             if (varID % 2 == 0) {
                 repVarReadableTable.put(varID, true);
             }
+            return true;
         }
+        return false;
     }
 
     public void takeSnapshot(int currentTime) {

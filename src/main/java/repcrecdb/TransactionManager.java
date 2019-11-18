@@ -7,6 +7,8 @@ import java.util.LinkedList;
 import java.util.Scanner;
 import java.util.Map.Entry;
 
+import javax.xml.crypto.Data;
+
 enum RunningStatus
 { 
     UP, DOWN;
@@ -48,7 +50,8 @@ public class TransactionManager {
         Scanner input = new Scanner(inputStream);
         try {
             while (!instructionBuffer.isEmpty() || input.hasNextLine()) {
-                if (input.hasNextLine()) {
+                boolean hasNewInstr = input.hasNextLine();
+                if (hasNewInstr) {
                     instructionBuffer.add(input.nextLine());
                 }
                 ticks += 1;
@@ -57,7 +60,7 @@ public class TransactionManager {
                 boolean allBlocked = true;
                 for (int i = 0; i < instructionBuffer.size(); i++) {
                     String instr = instructionBuffer.get(i);
-                    if (parse(instr)) {
+                    if (parse(instr, i < instructionBuffer.size()-1 || !hasNewInstr)) {
                         instructionBuffer.remove(i);
                         allBlocked = false;
                         break;
@@ -75,7 +78,7 @@ public class TransactionManager {
         }
     }
 
-    public boolean parse(String instruction) {
+    public boolean parse(String instruction, boolean isBlocked) {
         // Parse command and args
         String[] tokens = instruction.replaceAll("\\)", "").split("\\(");
         String command = tokens[0];
@@ -85,15 +88,23 @@ public class TransactionManager {
         }
 
         // Dispatch
+        String tName = null;
+        boolean suc = false;
         switch (command) {
             case "begin":
                 return (args.length == 1) && begin(args[0]);
             case "beginRO":
                 return (args.length == 1) && beginRO(args[0]);
             case "R":
-                return (args.length == 2) && read(args[0], args[1]);
+                tName = args[0];
+                suc = (args.length == 2) && read(tName, args[1]);
+                updateBlockedInstrCnt(tName, suc, isBlocked);
+                return suc;
             case "W":
-                return (args.length == 3) && write(args[0], args[1], Integer.parseInt(args[2]));
+                tName = args[0];
+                suc = (args.length == 3) && write(tName, args[1], Integer.parseInt(args[2]));
+                updateBlockedInstrCnt(tName, suc, isBlocked);
+                return suc;
             case "dump":
                 return dump();
             case "end":
@@ -171,6 +182,7 @@ public class TransactionManager {
         
         if (val != null) {
             System.out.println(String.format("%s: %d", varName, val));
+            t.accessedSites.add(siteID);
             if (isReplicatedData) {
                 nextSiteID = siteID+1;
             }
@@ -181,8 +193,12 @@ public class TransactionManager {
 
     public boolean write(String transactionName, String varName, int val) { 
         int varID = Integer.parseInt(varName.substring(1));
+        boolean suc = false;
+        Transaction t = this.transactions.get(transactionName);
+
         if (varID % 2 == 0)
         {
+            // Acquired write locks from every up site for even index variables
             int accessibleLocks = 0;
             for (Entry<Integer, SiteStatus> entry: siteStatusTable.entrySet()) {
                 DataManager dm = dms.get(entry.getKey());
@@ -193,22 +209,29 @@ public class TransactionManager {
                 }
             }
             if (accessibleLocks == siteStatusTable.size()) {
+                suc = true;
                 for (Integer siteID: siteStatusTable.keySet()) {
                     DataManager dm = dms.get(siteID);
                     dm.acquireLock(transactionName, varID, LockType.WRITE);
+                    t.accessedSites.add(siteID);
                 }
-                this.transactions.get(transactionName).writes.put(varID, val);
+                // Write to local copy of T, write to site on commit
+                t.writes.put(varID, val);
             }
         } else {
+            // Acquired write lock from the target site for odd index variables
             int siteID = (varID % 10) + 1;
             DataManager dm = dms.get(siteID);
             if (siteStatusTable.get(siteID).status == RunningStatus.UP
                 && dm.acquireLock(transactionName, varID, LockType.WRITE))
             {
-                this.transactions.get(transactionName).writes.put(varID, val);
+                suc = true;
+                t.writes.put(varID, val);
+                t.accessedSites.add(siteID);
             }
         }
-        return true;
+
+        return suc;
     }
 
     public boolean dump() {
@@ -218,7 +241,48 @@ public class TransactionManager {
         return true;
     }
 
-    public boolean end(String transactionName) { return true; }
+    public boolean end(String transactionName) {
+        // Check if the sites have been down after T accessed them
+        boolean commit = true;
+        Transaction t = this.transactions.get(transactionName);
+
+        // If this "begin" instruction of this T is blocked,
+        // then we will not find records of this T
+        if (t == null || t.blockedInstrCnt > 0) return false;
+
+        for (int siteID: t.accessedSites) {
+            if (this.siteStatusTable.get(siteID).lastDownTime > t.beginTime) {
+                commit = false;
+                break;
+            }
+        }
+        if (commit) {
+            // If a T has write operations, then T must have accessed to all the sites
+            // and is holding all the write locks from all the sites. If any of the sites
+            // is down currently, we will not arrive at this step. So we do not need to 
+            // check the status of all the sites
+            for (Entry<Integer, Integer> entry: t.writes.entrySet()) {
+                int varID = entry.getKey();
+                int val = entry.getValue();
+                if (varID % 2 == 0) {
+                    for (DataManager dm: this.dms.values()) {
+                        boolean suc = dm.write(transactionName, varID, val);
+                        assert(suc == true);
+                    }
+                }
+                else {
+                    dms.get((varID % 10)+1).write(transactionName, varID, val);
+                }
+            }
+        }
+        for (int siteID: t.accessedSites) {
+            DataManager dm = this.dms.get(siteID);
+            dm.releaseLocks(transactionName);
+        }
+        this.transactions.remove(transactionName);
+        System.out.println(String.format("%s %s", transactionName, commit ? "commits" : "aborts"));
+        return commit;
+    }
 
     public boolean fail(Integer siteID) {
         siteStatusTable.put(siteID, new SiteStatus(RunningStatus.DOWN, ticks));
@@ -256,6 +320,23 @@ public class TransactionManager {
     // *************************************
     //  U T I L I T Y   F U N C T I O N S 
     // *************************************
+
+    public void updateBlockedInstrCnt(String tName, boolean suc, boolean isBlocked) {
+        Transaction t = this.transactions.get(tName);
+        assert(t != null);
+
+        if (!suc) {
+            // If not success, add up T's blocked instruction if the
+            // current executed instruction is not yet count as a blocked instruction
+            if (!isBlocked) {
+                t.blockedInstrCnt += 1;
+            }
+        } else {
+            if (isBlocked) {
+                t.blockedInstrCnt -= 1;
+            }
+        }
+    }
 
     // Balance the workload of replicated data accessing
     public int findNextSite() {
