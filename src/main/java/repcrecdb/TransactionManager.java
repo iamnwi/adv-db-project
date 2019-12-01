@@ -7,8 +7,6 @@ import java.util.LinkedList;
 import java.util.Scanner;
 import java.util.Map.Entry;
 
-import javax.xml.crypto.Data;
-
 enum RunningStatus
 { 
     UP, DOWN;
@@ -47,8 +45,7 @@ public class TransactionManager {
     }
 
     public void run(InputStream inputStream) {
-        Scanner input = new Scanner(inputStream);
-        try {
+        try (Scanner input = new Scanner(inputStream);) {
             while (!instructionBuffer.isEmpty() || input.hasNextLine()) {
                 boolean hasNewInstr = input.hasNextLine();
                 if (hasNewInstr) {
@@ -72,9 +69,6 @@ public class TransactionManager {
                     break;
                 }
             }
-        }
-        finally {
-            input.close();
         }
     }
 
@@ -236,7 +230,7 @@ public class TransactionManager {
 
     public boolean dump() {
         for (DataManager dm : dms.values()) {
-            System.out.print(dm.toString());
+            System.out.println(dm.toString());
         }
         return true;
     }
@@ -281,7 +275,7 @@ public class TransactionManager {
         }
         this.transactions.remove(transactionName);
         System.out.println(String.format("%s %s", transactionName, commit ? "commits" : "aborts"));
-        return commit;
+        return true;
     }
 
     public boolean fail(Integer siteID) {
