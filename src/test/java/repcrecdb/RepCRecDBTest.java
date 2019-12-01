@@ -8,9 +8,16 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileDescriptor;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Paths;
+import java.util.Scanner;
 
 class RepCRecDBTest {
     @Test void testInitialization() {
@@ -222,6 +229,49 @@ class RepCRecDBTest {
         assertTrue(outContent.toString().contains("T2 commits\nT1 commits"));
 
         System.setOut(System.out);
+    }
+
+    @Test void testIntegration() {
+        File[] files = new File("tests").listFiles();
+        for (File file : files) {
+            String filePath = file.getPath();
+            if (filePath.endsWith(".in")) {
+                String ansFilePath = filePath.replace(".in", ".ans");
+                assertTrue(new File(ansFilePath).exists());
+
+                System.out.println("Test File: " + filePath);
+                System.out.println("Ans File: " + ansFilePath);
+
+                // Print content of test file
+                try(InputStream is = new FileInputStream(filePath);) {
+                    try(Scanner input = new Scanner(is);) {
+                        while (input.hasNext()) {
+                            System.out.println(input.nextLine());
+                        }
+                    }
+                } catch (Exception e) {
+                    System.out.print(e);
+                }
+
+                // Run test
+                try(InputStream is = new FileInputStream(filePath);) {
+                    String contents = new String(Files.readAllBytes(Paths.get(ansFilePath)));
+                    // Set output to a string
+                    ByteArrayOutputStream outContent = new ByteArrayOutputStream();
+                    System.setOut(new PrintStream(outContent));
+                    TransactionManager tm = RepCRecDB.init();
+                    tm.run(is);
+                    String res = outContent.toString();
+                    assertEquals(contents, res);
+                    // Reset output to the console
+                    PrintStream consoleStream = new PrintStream(new FileOutputStream(FileDescriptor.out));
+                    System.setOut(consoleStream);
+                } catch (Exception e)
+                {
+                    System.out.println(e);
+                }
+            }
+        }
     }
 
     // *************************************
