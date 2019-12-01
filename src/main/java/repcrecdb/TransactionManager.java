@@ -155,7 +155,7 @@ public class TransactionManager {
             if (t.isReadOnly) {
                 val = dm.readRO(varID, t.beginTime);
             } else {
-                boolean acquireLockSuc = dm.acquireLock(transactionName ,varID, LockType.READ);
+                boolean acquireLockSuc = dm.acquireLock(transactionName, varID, LockType.READ);
                 if (acquireLockSuc) {
                     val = dm.read(transactionName, varID);
                 }
@@ -176,7 +176,9 @@ public class TransactionManager {
         
         if (val != null) {
             System.out.println(String.format("%s: %d", varName, val));
-            t.accessedSites.add(siteID);
+            if (!t.accessedSites.containsKey(siteID)) {
+                t.accessedSites.put(siteID, this.ticks);
+            }
             if (isReplicatedData) {
                 nextSiteID = siteID+1;
             }
@@ -190,28 +192,28 @@ public class TransactionManager {
         boolean suc = false;
         Transaction t = this.transactions.get(transactionName);
 
+        if (this.getUpSiteCount() == 0) return false;
+
         if (varID % 2 == 0)
         {
             // Acquired write locks from every up site for even index variables
-            int accessibleLocks = 0;
+            WriteRecord writeRec = new WriteRecord(varID, val);
             for (Entry<Integer, SiteStatus> entry: siteStatusTable.entrySet()) {
-                DataManager dm = dms.get(entry.getKey());
+                int siteID = entry.getKey();
+                DataManager dm = dms.get(siteID);
                 if (entry.getValue().status == RunningStatus.UP 
                     && dm.checkLock(transactionName, varID, LockType.WRITE))
                 {
-                    accessibleLocks += 1;
-                }
-            }
-            if (accessibleLocks == siteStatusTable.size()) {
-                suc = true;
-                for (Integer siteID: siteStatusTable.keySet()) {
-                    DataManager dm = dms.get(siteID);
                     dm.acquireLock(transactionName, varID, LockType.WRITE);
-                    t.accessedSites.add(siteID);
+                    writeRec.siteIDs.add(siteID);
+                    if (!t.accessedSites.containsKey(siteID)) {
+                        t.accessedSites.put(siteID, this.ticks);
+                    }
                 }
-                // Write to local copy of T, write to site on commit
-                t.writes.put(varID, val);
             }
+
+            t.writes.add(writeRec);  // Write to local copy of T, write to site on commit
+            suc = true;
         } else {
             // Acquired write lock from the target site for odd index variables
             int siteID = (varID % 10) + 1;
@@ -219,9 +221,13 @@ public class TransactionManager {
             if (siteStatusTable.get(siteID).status == RunningStatus.UP
                 && dm.acquireLock(transactionName, varID, LockType.WRITE))
             {
+                WriteRecord writeRec = new WriteRecord(varID, val);
+                writeRec.siteIDs.add(siteID);
+                t.writes.add(writeRec);  // Write to local copy of T, write to site on commit
+                if (!t.accessedSites.containsKey(siteID)) {
+                    t.accessedSites.put(siteID, this.ticks);
+                }
                 suc = true;
-                t.writes.put(varID, val);
-                t.accessedSites.add(siteID);
             }
         }
 
@@ -244,32 +250,27 @@ public class TransactionManager {
         // then we will not find records of this T
         if (t == null || t.blockedInstrCnt > 0) return false;
 
-        for (int siteID: t.accessedSites) {
-            if (this.siteStatusTable.get(siteID).lastDownTime > t.beginTime) {
+        for (Entry<Integer, Integer> entry: t.accessedSites.entrySet()) {
+            int siteID = entry.getKey();
+            int accessTime = entry.getValue();
+            if (this.siteStatusTable.get(siteID).lastDownTime > accessTime) {
                 commit = false;
                 break;
             }
         }
         if (commit) {
-            // If a T has write operations, then T must have accessed to all the sites
-            // and is holding all the write locks from all the sites. If any of the sites
-            // is down currently, we will not arrive at this step. So we do not need to 
-            // check the status of all the sites
-            for (Entry<Integer, Integer> entry: t.writes.entrySet()) {
-                int varID = entry.getKey();
-                int val = entry.getValue();
-                if (varID % 2 == 0) {
-                    for (DataManager dm: this.dms.values()) {
-                        boolean suc = dm.write(transactionName, varID, val);
-                        assert(suc == true);
-                    }
-                }
-                else {
-                    dms.get((varID % 10)+1).write(transactionName, varID, val);
+            // If a T has write operations, then T must have accessed to and 
+            // hold write locks from all up sites at the moment of the write
+            // operation issued.
+            for (WriteRecord writeRec: t.writes) {
+                for (Integer siteID: writeRec.siteIDs) {
+                    DataManager dm = this.dms.get(siteID);
+                    boolean suc = dm.write(transactionName, writeRec.varID, writeRec.value);
+                    assert(suc == true);
                 }
             }
         }
-        for (int siteID: t.accessedSites) {
+        for (int siteID: t.accessedSites.keySet()) {
             DataManager dm = this.dms.get(siteID);
             dm.releaseLocks(transactionName);
         }

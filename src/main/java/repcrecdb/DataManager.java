@@ -63,7 +63,7 @@ public class DataManager {
         }
         return suc;
     }
-    
+
     public boolean acquireLock(String transactionName, int varID, LockType lockType) {
         if (!dataTable.containsKey(varID)) return false;
         if (checkLock(transactionName, varID, lockType)) {
