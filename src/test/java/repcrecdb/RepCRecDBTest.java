@@ -177,9 +177,10 @@ class RepCRecDBTest {
         tm.run(stringToInputStream("begin(T1)\nR(T1, x2)"));
         assertEquals("x2: 20", getLastLineFromOutput(outContent.toString()));
         int nextSiteID = tm.nextSiteID;
-        tm.run(stringToInputStream("W(T1, x2, 200)"));
+        tm.run(stringToInputStream("fail(1)\nW(T1, x2, 200)"));
         assertEquals(20, tm.dms.get(nextSiteID).dataTable.get(2));
-        assertEquals(200, tm.transactions.get("T1").writes.get(2));
+        assertEquals(200, tm.transactions.get("T1").writes.get(0).value);
+        assertEquals(9, tm.transactions.get("T1").writes.get(0).siteIDs.size());
 
         // Another T which reads x2 should be blocked
         assertEquals(0, tm.instructionBuffer.size());
@@ -192,14 +193,16 @@ class RepCRecDBTest {
         assertTrue(outContent.toString().contains("x1: 10"));
         tm.run(stringToInputStream("W(T1, x1, 100)"));
         assertEquals(10, tm.dms.get(2).dataTable.get(1));
-        assertEquals(100, tm.transactions.get("T1").writes.get(1));
+        assertEquals(100, tm.transactions.get("T1").writes.get(1).value);
+        assertEquals(1, tm.transactions.get("T1").writes.get(1).siteIDs.size());
 
         // T Read-Write-Read data, the last Read reads from T's local write copy
         outContent.reset();
         tm.run(stringToInputStream("begin(T3)\nR(T3, x4)\n"));
         assertTrue(outContent.toString().contains("x4: 40"));
-        tm.run(stringToInputStream("W(T3, x4, 400)\nR(T3, x4)\n"));
+        tm.run(stringToInputStream("recover(1)\nW(T3, x4, 400)\nR(T3, x4)\n"));
         assertTrue(outContent.toString().contains("x4: 400"));
+        assertEquals(10, tm.transactions.get("T3").writes.get(0).siteIDs.size());
 
         System.setOut(System.out);
     }
