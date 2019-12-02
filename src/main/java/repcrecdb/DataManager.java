@@ -132,7 +132,9 @@ public class DataManager {
     }
 
     public void takeSnapshot(int currentTime) {
-        snapshots.put(currentTime, dataTable);
+        HashMap<Integer, Integer> snapshot = new HashMap<Integer, Integer>();
+        snapshot.putAll(dataTable);
+        snapshots.put(currentTime, snapshot);
     }
 
     public String queryState() {
