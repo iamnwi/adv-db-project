@@ -59,14 +59,16 @@ public class DataManager {
             // or pending write comes from the current transaction
             (lockEntry == null
                 && (pendingWriteTran == null
-                    || pendingWriteTran.equals(transactionName))
+                    || (pendingWriteTran != null && pendingWriteTran.equals(transactionName)))
             )
             // Both are read lock and no pending write
-            || (lockEntry.lockType == LockType.READ
+            || (lockEntry != null
+                && lockEntry.lockType == LockType.READ
                 && lockType == LockType.READ
-                && pendingWriteTran == null)
+                && (pendingWriteTran == null || lockEntry.transactionName.equals(transactionName)))
             // Promote read lock to write lock
-            || (lockEntry.transactionName.equals(transactionName)
+            || (lockEntry != null
+                && lockEntry.transactionName.equals(transactionName)
                 && lockEntry.lockType == LockType.READ
                 && lockType == LockType.WRITE);
         return suc;
