@@ -155,9 +155,11 @@ public class TransactionManager {
             if (t.isReadOnly) {
                 val = dm.readRO(varID, t.beginTime);
             } else {
-                boolean acquireLockSuc = dm.acquireLock(transactionName, varID, LockType.READ);
-                if (acquireLockSuc) {
-                    val = dm.read(transactionName, varID);
+                if (!isReplicatedData || dm.repVarReadableTable.getOrDefault(varID, false)) {
+                    boolean acquireLockSuc = dm.acquireLock(transactionName, varID, LockType.READ);
+                    if (acquireLockSuc) {
+                        val = dm.read(transactionName, varID);
+                    }
                 }
             }
             // For situation W(T1, x1, 10)R(T1, x1), R should read the local write value of T1.
