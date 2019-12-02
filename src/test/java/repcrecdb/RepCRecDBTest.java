@@ -123,17 +123,16 @@ class RepCRecDBTest {
         System.setOut(new PrintStream(outContent));
 
         TransactionManager tm = RepCRecDB.init();
-        int nextSiteID = tm.nextSiteID;
         tm.run(stringToInputStream("beginRO(T1)\nR(T1, x2)"));
         assertEquals("x2: 20\n", outContent.toString());
-        assertEquals(nextSiteID+1, tm.nextSiteID);
+        assertEquals(1, tm.lastSiteID);
 
-        tm.dms.get(nextSiteID+2).dataTable.put(2, 30);
+        tm.dms.get(2).dataTable.put(2, 30);
         tm.run(stringToInputStream("beginRO(T2)"));
-        tm.siteStatusTable.put(tm.nextSiteID, new SiteStatus(RunningStatus.DOWN, tm.ticks));
+        tm.siteStatusTable.put(tm.lastSiteID, new SiteStatus(RunningStatus.DOWN, tm.ticks));
         tm.run(stringToInputStream("R(T2, x2)"));
         assertEquals("x2: 20\nx2: 30\n", outContent.toString());
-        assertEquals(nextSiteID+3, tm.nextSiteID);
+        assertEquals(2, tm.lastSiteID);
 
         System.setOut(System.out);
     }
@@ -147,7 +146,7 @@ class RepCRecDBTest {
         tm.run(stringToInputStream("begin(T1)\nR(T1, x2)"));
         assertEquals("x2: 20", getLastLineFromOutput(outContent.toString()));
 
-        tm.dms.get(tm.nextSiteID).dataTable.put(2, 30);
+        tm.dms.get(2).dataTable.put(2, 30);
         tm.run(stringToInputStream("begin(T2)\nR(T2, x2)"));
         assertEquals("x2: 30", getLastLineFromOutput(outContent.toString()));
 
@@ -176,9 +175,9 @@ class RepCRecDBTest {
         TransactionManager tm = RepCRecDB.init();
         tm.run(stringToInputStream("begin(T1)\nR(T1, x2)"));
         assertEquals("x2: 20", getLastLineFromOutput(outContent.toString()));
-        int nextSiteID = tm.nextSiteID;
+        int lastSiteID = tm.lastSiteID;
         tm.run(stringToInputStream("fail(1)\nW(T1, x2, 200)"));
-        assertEquals(20, tm.dms.get(nextSiteID).dataTable.get(2));
+        assertEquals(20, tm.dms.get(lastSiteID).dataTable.get(2));
         assertEquals(200, tm.transactions.get("T1").writes.get(0).value);
         assertEquals(9, tm.transactions.get("T1").writes.get(0).siteIDs.size());
 
@@ -259,11 +258,19 @@ class RepCRecDBTest {
                 // Run test
                 try(InputStream is = new FileInputStream(filePath);) {
                     String contents = new String(Files.readAllBytes(Paths.get(ansFilePath)));
+                    System.out.println(contents);
                     // Set output to a string
                     ByteArrayOutputStream outContent = new ByteArrayOutputStream();
                     System.setOut(new PrintStream(outContent));
                     TransactionManager tm = RepCRecDB.init();
-                    tm.run(is);
+                    try {
+                        tm.run(is);
+                    } catch (Exception e) {
+                        PrintStream consoleStream = new PrintStream(new FileOutputStream(FileDescriptor.out));
+                        System.setOut(consoleStream);
+                        System.out.println(e);
+                        assert(false);
+                    }
                     String res = outContent.toString();
                     assertEquals(contents, res);
                     // Reset output to the console

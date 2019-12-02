@@ -14,25 +14,25 @@ enum LockType
 class LockEntry {
     public LockType lockType;
     public String transactionName;
-    public boolean hasPendingWrite; // given W1(x1)R2(x1), avoid R2 read before W1
 
     public LockEntry(LockType lockType, String transactionName) {
         this.lockType = lockType;
         this.transactionName = transactionName;
-        this.hasPendingWrite = false;
     }
 }
 
 public class DataManager {
     public int siteID;
     public HashMap<Integer, Integer> dataTable;
-    public HashMap<Integer, LockEntry> lockTable; // (varName, (lock type, transName))
+    public HashMap<Integer, LockEntry> lockTable; // (varName, lock entry)
+    public HashMap<Integer, String> pendingWriteTable; // (varName, pend write transaction name)
     public HashMap<Integer, Boolean> repVarReadableTable; // (varID, isReadable?)
     public TreeMap<Integer, HashMap<Integer, Integer>> snapshots; // (time, map(varID, val))
 
     public DataManager(int index) {
         siteID = index;
         lockTable = new HashMap<Integer, LockEntry>();
+        pendingWriteTable = new HashMap<Integer, String>();
         snapshots = new TreeMap<Integer, HashMap<Integer, Integer>>();
 
         dataTable = new HashMap<Integer, Integer>();
@@ -53,14 +53,26 @@ public class DataManager {
 
     public boolean checkLock(String transactionName, int varID, LockType lockType) {
         LockEntry lockEntry = lockTable.get(varID);
-        boolean suc = lockEntry == null
-            || (lockEntry.lockType == LockType.READ && !lockEntry.hasPendingWrite)
-            || (lockEntry.transactionName.equals(transactionName)
+        String pendingWriteTran = pendingWriteTable.get(varID);
+        boolean suc = 
+            // No lock entry and no pending write 
+            // or this transaction is the pending one
+            (lockEntry == null
+                && (pendingWriteTran == null
+                    || (pendingWriteTran != null
+                        && lockType ==  LockType.WRITE
+                        && pendingWriteTran.equals(transactionName)))
+            )
+            // Both are read lock and no pending write
+            || (lockEntry != null
+                && lockEntry.lockType == LockType.READ
+                && lockType == LockType.READ
+                && (pendingWriteTran == null || lockEntry.transactionName.equals(transactionName)))
+            // Promote read lock to write lock
+            || (lockEntry != null
+                && lockEntry.transactionName.equals(transactionName)
                 && lockEntry.lockType == LockType.READ
                 && lockType == LockType.WRITE);
-        if (!suc && lockType == LockType.WRITE) {
-            lockTable.get(varID).hasPendingWrite = true;
-        }
         return suc;
     }
 
@@ -68,6 +80,31 @@ public class DataManager {
         if (!dataTable.containsKey(varID)) return false;
         if (checkLock(transactionName, varID, lockType)) {
             lockTable.put(varID, new LockEntry(lockType, transactionName));
+            String pendingWriteTran = pendingWriteTable.get(varID);
+            if (lockType == LockType.WRITE
+                && pendingWriteTran != null
+                && pendingWriteTran.equals(transactionName)) {
+                pendingWriteTable.remove(varID);
+            }
+            return true;
+        }
+        return false;
+    }
+
+    public boolean setPendingWrite(String transactionName, int varID) {
+        if (pendingWriteTable.get(varID) == null) {
+            pendingWriteTable.put(varID, transactionName);
+
+            // Remove read lock of from the same Transaction
+            // as it should read the new value afterwards.
+            // Otherwise, it will read the old value.
+            LockEntry lockEntry = lockTable.get(varID);
+            if (lockEntry != null
+                && lockEntry.lockType == LockType.READ
+                && lockEntry.transactionName.equals(transactionName))
+            {
+                lockTable.remove(varID);
+            }
             return true;
         }
         return false;
@@ -87,6 +124,7 @@ public class DataManager {
 
     public void fail() {
         lockTable.clear();
+        pendingWriteTable.clear();
     }
 
     public void recover() {
