@@ -56,10 +56,12 @@ public class DataManager {
         String pendingWriteTran = pendingWriteTable.get(varID);
         boolean suc = 
             // No lock entry and no pending write 
-            // or pending write comes from the current transaction
+            // or this transaction is the pending one
             (lockEntry == null
                 && (pendingWriteTran == null
-                    || (pendingWriteTran != null && pendingWriteTran.equals(transactionName)))
+                    || (pendingWriteTran != null
+                        && lockType ==  LockType.WRITE
+                        && pendingWriteTran.equals(transactionName)))
             )
             // Both are read lock and no pending write
             || (lockEntry != null
@@ -92,6 +94,17 @@ public class DataManager {
     public boolean setPendingWrite(String transactionName, int varID) {
         if (pendingWriteTable.get(varID) == null) {
             pendingWriteTable.put(varID, transactionName);
+
+            // Remove read lock of from the same Transaction
+            // as it should read the new value afterwards.
+            // Otherwise, it will read the old value.
+            LockEntry lockEntry = lockTable.get(varID);
+            if (lockEntry != null
+                && lockEntry.lockType == LockType.READ
+                && lockEntry.transactionName.equals(transactionName))
+            {
+                lockTable.remove(varID);
+            }
             return true;
         }
         return false;
