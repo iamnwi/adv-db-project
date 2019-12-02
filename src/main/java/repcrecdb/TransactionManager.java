@@ -155,20 +155,17 @@ public class TransactionManager {
             if (t.isReadOnly) {
                 val = dm.readRO(varID, t.beginTime);
             } else {
-                if (!isReplicatedData || dm.repVarReadableTable.getOrDefault(varID, false)) {
-                    boolean acquireLockSuc = dm.acquireLock(transactionName, varID, LockType.READ);
-                    if (acquireLockSuc) {
-                        val = dm.read(transactionName, varID);
+                // Try to read from local writes firstlockTable
+                // For situation W(T1, x1, 10)R(T1, x1), R should read the local write value of T1.
+                val = this.transactions.get(transactionName).read(varID);
+
+                if (val == null) {
+                    if (!isReplicatedData || dm.repVarReadableTable.getOrDefault(varID, false)) {
+                        boolean acquireLockSuc = dm.acquireLock(transactionName, varID, LockType.READ);
+                        if (acquireLockSuc) {
+                            val = dm.read(transactionName, varID);
+                        }
                     }
-                }
-            }
-            // For situation W(T1, x1, 10)R(T1, x1), R should read the local write value of T1.
-            if (val == null) {
-                LockEntry lockEntry = dm.lockTable.get(varID);
-                if (lockEntry.transactionName.equals(transactionName)
-                    && lockEntry.lockType == LockType.WRITE)
-                {
-                    val = this.transactions.get(transactionName).read(varID);
                 }
             }
             if (!isReplicatedData || tryCnt >= upCnt) break;
@@ -193,29 +190,49 @@ public class TransactionManager {
         int varID = Integer.parseInt(varName.substring(1));
         boolean suc = false;
         Transaction t = this.transactions.get(transactionName);
-
-        if (this.getUpSiteCount() == 0) return false;
+        int upCnt = this.getUpSiteCount();
+        if (upCnt == 0) return false;
 
         if (varID % 2 == 0)
         {
             // Acquired write locks from every up site for even index variables
-            WriteRecord writeRec = new WriteRecord(varID, val);
+            int acquireLockCnt = 0;
             for (Entry<Integer, SiteStatus> entry: siteStatusTable.entrySet()) {
                 int siteID = entry.getKey();
                 DataManager dm = dms.get(siteID);
                 if (entry.getValue().status == RunningStatus.UP 
                     && dm.checkLock(transactionName, varID, LockType.WRITE))
                 {
-                    dm.acquireLock(transactionName, varID, LockType.WRITE);
-                    writeRec.siteIDs.add(siteID);
-                    if (!t.accessedSites.containsKey(siteID)) {
-                        t.accessedSites.put(siteID, this.ticks);
+                    acquireLockCnt++;
+                }
+            }
+            if (acquireLockCnt == upCnt) {
+                WriteRecord writeRec = new WriteRecord(varID, val);
+                for (Entry<Integer, SiteStatus> entry: siteStatusTable.entrySet()) {
+                    int siteID = entry.getKey();
+                    DataManager dm = dms.get(siteID);
+                    if (entry.getValue().status == RunningStatus.UP)
+                    {
+                        dm.acquireLock(transactionName, varID, LockType.WRITE);
+                        writeRec.siteIDs.add(siteID);
+                        if (!t.accessedSites.containsKey(siteID)) {
+                            t.accessedSites.put(siteID, this.ticks);
+                        }
+                    }
+                }
+
+                t.writes.add(writeRec);  // Write to local copy of T, write to site on commit
+                suc = true;
+            } else {
+                for (Entry<Integer, SiteStatus> entry: siteStatusTable.entrySet()) {
+                    int siteID = entry.getKey();
+                    DataManager dm = dms.get(siteID);
+                    if (entry.getValue().status == RunningStatus.UP)
+                    {
+                        dm.setPendingWrite(transactionName, varID);
                     }
                 }
             }
-
-            t.writes.add(writeRec);  // Write to local copy of T, write to site on commit
-            suc = true;
         } else {
             // Acquired write lock from the target site for odd index variables
             int siteID = (varID % 10) + 1;
