@@ -14,13 +14,11 @@ enum LockType
 
 class LockEntry {
     public LockType lockType;
-    // public String transactionName;
     public String writeLockTransaction;
     public HashSet<String> readLockTransactions; // Set<TransactionName>
 
     public LockEntry(LockType lockType, String transactionName) {
         this.lockType = lockType;
-        // this.transactionName = transactionName;
         this.readLockTransactions = new HashSet<String>();
         if (lockType == LockType.READ) {
             this.readLockTransactions.add(transactionName);
@@ -89,7 +87,6 @@ public class DataManager {
                 && lockEntry.lockType == LockType.READ
                 && lockType == LockType.READ
                 && (pendingWriteTran == null || lockEntry.readLockTransactions.contains(transactionName)))
-                // && (pendingWriteTran == null || lockEntry.transactionName.equals(transactionName)))
             // Promote read lock to write lock if there is only one read lock and
             // this read lock comes from this T
             || (lockType == LockType.WRITE
