@@ -144,7 +144,9 @@ public class TransactionManager {
 
     public boolean read(String transactionName, String varName) {
         Transaction t = transactions.get(transactionName);
-        if (t == null) return false;
+        if (t == null) {
+            return true;
+        }
         int varID = Integer.parseInt(varName.substring(1));
         boolean isReplicatedData = varID % 2 == 0;
         int siteID = -1;
@@ -203,6 +205,9 @@ public class TransactionManager {
         int varID = Integer.parseInt(varName.substring(1));
         boolean suc = false;
         Transaction t = this.transactions.get(transactionName);
+        if (t == null) {
+            return true;
+        }
         int upCnt = this.getUpSiteCount();
         if (upCnt == 0) return false;
 
@@ -293,7 +298,12 @@ public class TransactionManager {
 
         // If this "begin" instruction of this T is blocked,
         // then we will not find records of this T
-        if (t == null || t.blockedInstrCnt > 0) return false;
+        if (t == null) {
+            return true;
+        }
+        if (t.blockedInstrCnt > 0) {
+            return false;
+        }
 
         for (Entry<Integer, Integer> entry: t.accessedSites.entrySet()) {
             int siteID = entry.getKey();
@@ -379,7 +389,9 @@ public class TransactionManager {
 
     public void updateBlockedInstrCnt(String tName, boolean suc, boolean isBlocked) {
         Transaction t = this.transactions.get(tName);
-        assert(t != null);
+        if (t == null) {
+            return;
+        }
 
         if (!suc) {
             // If not success, add up T's blocked instruction if the
