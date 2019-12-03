@@ -192,7 +192,9 @@ public class TransactionManager {
             }
         }
 
-        waitForGraph.addEdge(transactionName, blockTrancName);
+        if (!transactionName.equals(blockTrancName)) {
+            waitForGraph.addEdge(transactionName, blockTrancName);
+        }
 
         return !(val == null);
     }
@@ -249,7 +251,9 @@ public class TransactionManager {
                         dm.setPendingWrite(transactionName, varID);
                     }
                 }
-                waitForGraph.addEdge(transactionName, blockTrancName);
+                if (!transactionName.equals(blockTrancName)) {
+                    waitForGraph.addEdge(transactionName, blockTrancName);
+                }
             }
         } else {
             // Acquired write lock from the target site for odd index variables
@@ -269,8 +273,8 @@ public class TransactionManager {
             }
         }
 
-        if (!suc && blockTrancName.length() > 0) {
-            waitForGraph.addEdge(transactionName, blockTrancName);
+        if (!suc && blockTrancName.length() > 0 && !transactionName.equals(blockTrancName)) {
+                waitForGraph.addEdge(transactionName, blockTrancName);
         }
         return suc;
     }
@@ -328,6 +332,12 @@ public class TransactionManager {
             dm.releaseLocks(transactionName);
         }
         this.transactions.remove(transactionName);
+        for (int i = 0; i < instructionBuffer.size(); i++) {
+            String instr = instructionBuffer.get(i);
+            if (instr.contains(transactionName)) {
+                instructionBuffer.remove(i);
+            }
+        }
         waitForGraph.removeNode(transactionName);
         System.out.println(String.format("%s %s", transactionName, "aborts"));
     }
@@ -417,14 +427,14 @@ public class TransactionManager {
     }
 
     private String findYoungest(ArrayList<String> list) {
-        int minBegin = Integer.MAX_VALUE;
-        String minName = "";
+        int maxBegin = Integer.MIN_VALUE;
+        String maxName = "";
         for (String tranc : list) {
-            if (transactions.get(tranc).beginTime < minBegin) {
-                minBegin = transactions.get(tranc).beginTime;
-                minName = tranc;
+            if (transactions.get(tranc).beginTime > maxBegin) {
+                maxBegin = transactions.get(tranc).beginTime;
+                maxName = tranc;
             }
         }
-        return minName;
+        return maxName;
     }
 }

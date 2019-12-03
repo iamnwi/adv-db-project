@@ -17,7 +17,9 @@ public class WaitForGraph {
     }
 
     public void addEdge(String source, String end) {
-        graph.getOrDefault(source, new HashSet<>()).add(end);
+        HashSet<String> list = graph.getOrDefault(source, new HashSet<>());
+        list.add(end);
+        graph.put(source, list);
     }
 
     public void removeNode(String source) {
@@ -29,6 +31,7 @@ public class WaitForGraph {
 
     public ArrayList<String> detectDeadlock() {
         searched = new HashSet<>();
+        visited = new HashSet<>();
         for (String src : graph.keySet()) {
             if (!searched.contains(src)) {
                 visited.add(src);
@@ -41,7 +44,7 @@ public class WaitForGraph {
     }
 
     private boolean hasLoopDFS(String source) {
-        HashSet<String> list = graph.get(source);
+        HashSet<String> list = graph.getOrDefault(source,  new HashSet<>());
         for (String end : list) {
             if (searched.contains(end)) {
                 continue;

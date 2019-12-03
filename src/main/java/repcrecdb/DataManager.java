@@ -96,13 +96,17 @@ public class DataManager {
                 && lockEntry.readLockTransactions.size() == 1
                 && lockEntry.readLockTransactions.contains(transactionName)
                 && (pendingWriteTran == null || pendingWriteTran.equals(transactionName)));
-        return suc ? null : lockEntry == null ? pendingWriteTran : lockEntry.writeLockTransaction;
+        return suc ? null
+                : pendingWriteTran != null ? pendingWriteTran
+                        : lockEntry.writeLockTransaction != null && lockEntry.writeLockTransaction.length() > 0
+                                ? lockEntry.writeLockTransaction
+                                : lockEntry.readLockTransactions.iterator().next();
     }
 
     public String acquireLock(String transactionName, int varID, LockType lockType) {
         if (!dataTable.containsKey(varID)) return "";
-        String checkLockBlock = checkLock(transactionName, varID, lockType);
-        if (checkLockBlock == null) {
+        String block = checkLock(transactionName, varID, lockType);
+        if (block == null) {
             if (!lockTable.containsKey(varID)) {
                 lockTable.put(varID, new LockEntry(lockType, transactionName));
             } else {
@@ -118,7 +122,7 @@ public class DataManager {
             }
             return null;
         }
-        return checkLockBlock;
+        return block;
     }
 
     public boolean setPendingWrite(String transactionName, int varID) {
