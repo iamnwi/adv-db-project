@@ -51,7 +51,8 @@ public class DataManager {
         }
     }
 
-    public boolean checkLock(String transactionName, int varID, LockType lockType) {
+    // checkLock() returns null if lock is available or another transaction's name if it is blocked
+    public String checkLock(String transactionName, int varID, LockType lockType) {
         LockEntry lockEntry = lockTable.get(varID);
         String pendingWriteTran = pendingWriteTable.get(varID);
         boolean suc = 
@@ -73,12 +74,13 @@ public class DataManager {
                 && lockEntry.transactionName.equals(transactionName)
                 && lockEntry.lockType == LockType.READ
                 && lockType == LockType.WRITE);
-        return suc;
+        return suc ? null : lockEntry == null ? pendingWriteTran : lockEntry.transactionName;
     }
 
-    public boolean acquireLock(String transactionName, int varID, LockType lockType) {
-        if (!dataTable.containsKey(varID)) return false;
-        if (checkLock(transactionName, varID, lockType)) {
+    public String acquireLock(String transactionName, int varID, LockType lockType) {
+        if (!dataTable.containsKey(varID)) return "";
+        String checkLockBlock = checkLock(transactionName, varID, lockType);
+        if (checkLockBlock == null) {
             lockTable.put(varID, new LockEntry(lockType, transactionName));
             String pendingWriteTran = pendingWriteTable.get(varID);
             if (lockType == LockType.WRITE
@@ -86,9 +88,9 @@ public class DataManager {
                 && pendingWriteTran.equals(transactionName)) {
                 pendingWriteTable.remove(varID);
             }
-            return true;
+            return null;
         }
-        return false;
+        return checkLockBlock;
     }
 
     public boolean setPendingWrite(String transactionName, int varID) {

@@ -1,6 +1,7 @@
 package repcrecdb;
 
 import java.io.InputStream;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedList;
@@ -27,6 +28,7 @@ public class TransactionManager {
     HashMap<String, Transaction> transactions;
     HashMap<Integer, SiteStatus> siteStatusTable;
     LinkedList<String> instructionBuffer;
+    WaitForGraph waitForGraph;
     Integer ticks; // Mimic a ticking time
     int lastSiteID; // site ID from 1 to 10, workload balancing for replicated data
 
@@ -36,6 +38,7 @@ public class TransactionManager {
         transactions = new HashMap<String, Transaction>();
         instructionBuffer = new LinkedList<String>();
         lastSiteID = dms.size();
+        waitForGraph = new WaitForGraph();
 
         // Initialize the status for each site as up
         siteStatusTable = new HashMap<Integer, SiteStatus>();
@@ -52,6 +55,14 @@ public class TransactionManager {
                     instructionBuffer.add(input.nextLine());
                 }
                 ticks += 1;
+
+                // Detect deadlock at the start of ticks
+                ArrayList<String> list = waitForGraph.detectDeadlock();
+                if (list != null) {
+                    String trancName = findYoungest(list);
+                    abort(trancName);
+                }
+
                 // Execute instructions in instruction buffer until one that 
                 // is not blocked
                 boolean allBlocked = true;
@@ -150,6 +161,7 @@ public class TransactionManager {
         Integer val = null;
         int upCnt = getUpSiteCount();
         int tryCnt = 1;
+        String blockTrancName = "";
         while (val == null) {
             DataManager dm = dms.get(siteID);
             if (t.isReadOnly) {
@@ -161,8 +173,8 @@ public class TransactionManager {
 
                 if (val == null) {
                     if (!isReplicatedData || dm.repVarReadableTable.getOrDefault(varID, false)) {
-                        boolean acquireLockSuc = dm.acquireLock(transactionName, varID, LockType.READ);
-                        if (acquireLockSuc) {
+                        blockTrancName = dm.acquireLock(transactionName, varID, LockType.READ);
+                        if (blockTrancName == null) {
                             val = dm.read(transactionName, varID);
                         }
                     }
@@ -180,6 +192,8 @@ public class TransactionManager {
             }
         }
 
+        waitForGraph.addEdge(transactionName, blockTrancName);
+
         return !(val == null);
     }
 
@@ -190,6 +204,7 @@ public class TransactionManager {
         int upCnt = this.getUpSiteCount();
         if (upCnt == 0) return false;
 
+        String blockTrancName = "";
         if (varID % 2 == 0)
         {
             // Acquired write locks from every up site for even index variables
@@ -197,10 +212,15 @@ public class TransactionManager {
             for (Entry<Integer, SiteStatus> entry: siteStatusTable.entrySet()) {
                 int siteID = entry.getKey();
                 DataManager dm = dms.get(siteID);
-                if (entry.getValue().status == RunningStatus.UP 
-                    && dm.checkLock(transactionName, varID, LockType.WRITE))
-                {
-                    acquireLockCnt++;
+                if (entry.getValue().status == RunningStatus.UP) {
+                    String checkLockRes = dm.checkLock(transactionName, varID, LockType.WRITE);
+                    if (checkLockRes == null) {
+                        acquireLockCnt++;
+                    } else {
+                        if (checkLockRes.length() > 0) {
+                            blockTrancName = checkLockRes;
+                        }
+                    }
                 }
             }
             if (acquireLockCnt == upCnt) {
@@ -229,24 +249,29 @@ public class TransactionManager {
                         dm.setPendingWrite(transactionName, varID);
                     }
                 }
+                waitForGraph.addEdge(transactionName, blockTrancName);
             }
         } else {
             // Acquired write lock from the target site for odd index variables
             int siteID = (varID % 10) + 1;
             DataManager dm = dms.get(siteID);
-            if (siteStatusTable.get(siteID).status == RunningStatus.UP
-                && dm.acquireLock(transactionName, varID, LockType.WRITE))
-            {
-                WriteRecord writeRec = new WriteRecord(varID, val);
-                writeRec.siteIDs.add(siteID);
-                t.writes.add(writeRec);  // Write to local copy of T, write to site on commit
-                if (!t.accessedSites.containsKey(siteID)) {
-                    t.accessedSites.put(siteID, this.ticks);
+            if (siteStatusTable.get(siteID).status == RunningStatus.UP) {
+                blockTrancName = dm.acquireLock(transactionName, varID, LockType.WRITE);
+                if (blockTrancName == null) {
+                    WriteRecord writeRec = new WriteRecord(varID, val);
+                    writeRec.siteIDs.add(siteID);
+                    t.writes.add(writeRec);  // Write to local copy of T, write to site on commit
+                    if (!t.accessedSites.containsKey(siteID)) {
+                        t.accessedSites.put(siteID, this.ticks);
+                    }
+                    suc = true;
                 }
-                suc = true;
             }
         }
 
+        if (!suc && blockTrancName.length() > 0) {
+            waitForGraph.addEdge(transactionName, blockTrancName);
+        }
         return suc;
     }
 
@@ -291,8 +316,20 @@ public class TransactionManager {
             dm.releaseLocks(transactionName);
         }
         this.transactions.remove(transactionName);
+        waitForGraph.removeNode(transactionName);
         System.out.println(String.format("%s %s", transactionName, commit ? "commits" : "aborts"));
         return true;
+    }
+
+    private void abort(String transactionName) {
+        Transaction t = this.transactions.get(transactionName);
+        for (int siteID: t.accessedSites.keySet()) {
+            DataManager dm = this.dms.get(siteID);
+            dm.releaseLocks(transactionName);
+        }
+        this.transactions.remove(transactionName);
+        waitForGraph.removeNode(transactionName);
+        System.out.println(String.format("%s %s", transactionName, "aborts"));
     }
 
     public boolean fail(Integer siteID) {
@@ -325,8 +362,6 @@ public class TransactionManager {
 
         return true;
     }
-
-    public void detectDeadLock() {}
 
     // *************************************
     //  U T I L I T Y   F U N C T I O N S 
@@ -379,5 +414,17 @@ public class TransactionManager {
             state.append(String.format("- Name: %s%s\tBegin Time: %s\n", t.name, t.isReadOnly ? "(RO)" : "", t.beginTime));
         }
         return state.toString();
+    }
+
+    private String findYoungest(ArrayList<String> list) {
+        int minBegin = Integer.MAX_VALUE;
+        String minName = "";
+        for (String tranc : list) {
+            if (transactions.get(tranc).beginTime < minBegin) {
+                minBegin = transactions.get(tranc).beginTime;
+                minName = tranc;
+            }
+        }
+        return minName;
     }
 }
