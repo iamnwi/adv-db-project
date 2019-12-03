@@ -2,6 +2,7 @@ package repcrecdb;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
 import java.util.TreeMap;
 import java.util.Map.Entry;
@@ -13,11 +14,29 @@ enum LockType
 
 class LockEntry {
     public LockType lockType;
-    public String transactionName;
+    public String writeLockTransaction;
+    public HashSet<String> readLockTransactions; // Set<TransactionName>
 
     public LockEntry(LockType lockType, String transactionName) {
         this.lockType = lockType;
-        this.transactionName = transactionName;
+        this.readLockTransactions = new HashSet<String>();
+        if (lockType == LockType.READ) {
+            this.readLockTransactions.add(transactionName);
+            this.writeLockTransaction = "";
+        } else if (lockType == LockType.WRITE) {
+            this.writeLockTransaction = transactionName;
+        }
+    }
+
+    public boolean setLock(LockType lockType, String transactionName) {
+        this.lockType = lockType;
+        if (lockType == LockType.READ) {
+            this.readLockTransactions.add(transactionName);
+            this.writeLockTransaction = "";
+        } else if (lockType == LockType.WRITE) {
+            this.writeLockTransaction = transactionName;
+        }
+        return true;
     }
 }
 
@@ -67,25 +86,35 @@ public class DataManager {
             || (lockEntry != null
                 && lockEntry.lockType == LockType.READ
                 && lockType == LockType.READ
-                && (pendingWriteTran == null || lockEntry.transactionName.equals(transactionName)))
-            // Promote read lock to write lock
-            || (lockEntry != null
-                && lockEntry.transactionName.equals(transactionName)
+                && (pendingWriteTran == null || lockEntry.readLockTransactions.contains(transactionName)))
+            // Promote read lock to write lock if there is only one read lock and
+            // this read lock comes from this T
+            || (lockType == LockType.WRITE
+                && lockEntry != null
                 && lockEntry.lockType == LockType.READ
-                && lockType == LockType.WRITE);
+                && lockEntry.readLockTransactions.size() == 1
+                && lockEntry.readLockTransactions.contains(transactionName)
+                && (pendingWriteTran == null || pendingWriteTran.equals(transactionName)));
         return suc;
     }
 
     public boolean acquireLock(String transactionName, int varID, LockType lockType) {
         if (!dataTable.containsKey(varID)) return false;
         if (checkLock(transactionName, varID, lockType)) {
-            lockTable.put(varID, new LockEntry(lockType, transactionName));
+            if (!lockTable.containsKey(varID)) {
+                lockTable.put(varID, new LockEntry(lockType, transactionName));
+            } else {
+                LockEntry lockEntry = lockTable.get(varID);
+                lockEntry.setLock(lockType, transactionName);
+            }
+
             String pendingWriteTran = pendingWriteTable.get(varID);
             if (lockType == LockType.WRITE
                 && pendingWriteTran != null
                 && pendingWriteTran.equals(transactionName)) {
                 pendingWriteTable.remove(varID);
             }
+
             return true;
         }
         return false;
@@ -95,15 +124,18 @@ public class DataManager {
         if (pendingWriteTable.get(varID) == null) {
             pendingWriteTable.put(varID, transactionName);
 
-            // Remove read lock of from the same Transaction
+            // Remove read lock from the same Transaction(blocks it from reading again)
             // as it should read the new value afterwards.
             // Otherwise, it will read the old value.
             LockEntry lockEntry = lockTable.get(varID);
             if (lockEntry != null
                 && lockEntry.lockType == LockType.READ
-                && lockEntry.transactionName.equals(transactionName))
+                && lockEntry.readLockTransactions.contains(transactionName))
             {
-                lockTable.remove(varID);
+                lockEntry.readLockTransactions.remove(transactionName);
+                if (lockEntry.readLockTransactions.size() == 0) {
+                    lockTable.remove(varID);
+                }
             }
             return true;
         }
@@ -113,12 +145,24 @@ public class DataManager {
     public void releaseLocks(String transactionName) {
         ArrayList<Integer> releasedVarIDs = new ArrayList<Integer>();
         for (Entry<Integer, LockEntry> entry: this.lockTable.entrySet()) {
-            if (entry.getValue().transactionName.equals(transactionName)) {
+            if (entry.getValue().writeLockTransaction.equals(transactionName)
+                || entry.getValue().readLockTransactions.contains(transactionName))
+            {
                 releasedVarIDs.add(entry.getKey());
             }
         }
         for (Integer varID: releasedVarIDs) {
-            this.lockTable.remove(varID);
+            LockEntry lockEntry = this.lockTable.get(varID);
+            if (lockEntry.lockType == LockType.READ) {
+                // Reduce read lock count and remove this lock if it comes to zero
+                lockEntry.readLockTransactions.remove(transactionName);
+                if (lockEntry.readLockTransactions.size() == 0) {
+                    this.lockTable.remove(varID);
+                }
+            } else {
+                // If it is a write lock, remove it as we will only have one write lock at a time
+                this.lockTable.remove(varID);
+            }
         }
     }
 
@@ -138,7 +182,7 @@ public class DataManager {
         LockEntry lockEntry = lockTable.get(varID);
         Integer val = null;
         if (lockEntry != null
-            && lockEntry.transactionName.equals(transactionName)
+            && lockEntry.readLockTransactions.contains(transactionName)
             && lockEntry.lockType == LockType.READ)
         {
             val = dataTable.get(varID);
@@ -155,7 +199,7 @@ public class DataManager {
     public boolean write(String transactionName, int varID, int val) {
         LockEntry lockEntry = lockTable.get(varID);
         if (lockEntry != null
-            && lockEntry.transactionName.equals(transactionName)
+            && lockEntry.writeLockTransaction.equals(transactionName)
             && lockEntry.lockType == LockType.WRITE)
         {
             dataTable.put(varID, val);
