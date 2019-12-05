@@ -450,9 +450,9 @@ public class TransactionManager {
         for (Transaction t : transactions.values()) {
             state.append(String.format("- Name: %s%s\tBegin Time: %s\n", t.name, t.isReadOnly ? "(RO)" : "", t.beginTime));
         }
-        state.append("Blocked instructions\n");
+        state.append("\nInstruction Buffer\n");
         for (String instr : instructionBuffer) {
-            state.append(String.format("%s\n", instr));
+            state.append(String.format("- %s\n", instr));
         }
         return state.toString();
     }
