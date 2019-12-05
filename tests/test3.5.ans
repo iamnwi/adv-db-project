@@ -1,6 +1,6 @@
 x3: 30
 x3: 30
-T2 aborts
+T2 aborts(Accessed site(s) failed)
 T1 commits
 site 1 - x2: 20, x4: 91, x6: 60, x8: 80, x10: 100, x12: 120, x14: 140, x16: 160, x18: 180, x20: 200
 site 2 - x1: 10, x2: 20, x4: 40, x6: 60, x8: 80, x10: 100, x11: 110, x12: 120, x14: 140, x16: 160, x18: 180, x20: 200

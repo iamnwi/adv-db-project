@@ -24,6 +24,9 @@ class SiteStatus {
 }
 
 public class TransactionManager {
+    public static final String DEADLOCK_ABORT_MESSAGE = "Deadlock detected, younger killed";
+    public static final String SITE_FAIL_ABORT_MESSAGE = "Accessed site(s) failed";
+
     HashMap<Integer, DataManager> dms;
     HashMap<String, Transaction> transactions;
     HashMap<Integer, SiteStatus> siteStatusTable;
@@ -60,7 +63,7 @@ public class TransactionManager {
                 ArrayList<String> list = waitForGraph.detectDeadlock();
                 if (list != null) {
                     String trancName = findYoungest(list);
-                    abort(trancName);
+                    abort(trancName, DEADLOCK_ABORT_MESSAGE);
                 }
 
                 // Execute instructions in instruction buffer until one that 
@@ -331,11 +334,16 @@ public class TransactionManager {
         }
         this.transactions.remove(transactionName);
         waitForGraph.removeNode(transactionName);
-        System.out.println(String.format("%s %s", transactionName, commit ? "commits" : "aborts"));
+        if (commit) {
+            System.out.println(String.format("%s commits", transactionName));
+        } else {
+            System.out.println(String.format("%s aborts(%s)", transactionName, SITE_FAIL_ABORT_MESSAGE));
+        }
+
         return true;
     }
 
-    private void abort(String transactionName) {
+    private void abort(String transactionName, String message) {
         Transaction t = this.transactions.get(transactionName);
         for (int siteID: t.accessedSites.keySet()) {
             DataManager dm = this.dms.get(siteID);
@@ -349,7 +357,7 @@ public class TransactionManager {
             }
         }
         waitForGraph.removeNode(transactionName);
-        System.out.println(String.format("%s %s", transactionName, "aborts"));
+        System.out.println(String.format("%s aborts(%s)", transactionName, message));
     }
 
     public boolean fail(Integer siteID) {
