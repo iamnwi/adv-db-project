@@ -71,7 +71,7 @@ public class DataManager {
     }
 
     // checkLock() returns null if lock is available or another transaction's name if it is blocked
-    public String checkLock(String transactionName, int varID, LockType lockType) {
+    public HashSet<String> checkLock(String transactionName, int varID, LockType lockType) {
         LockEntry lockEntry = lockTable.get(varID);
         String pendingWriteTran = pendingWriteTable.get(varID);
         boolean suc = 
@@ -96,17 +96,42 @@ public class DataManager {
                 && lockEntry.readLockTransactions.size() == 1
                 && lockEntry.readLockTransactions.contains(transactionName)
                 && (pendingWriteTran == null || pendingWriteTran.equals(transactionName)));
-        return suc ? null
-                : pendingWriteTran != null ? pendingWriteTran
-                        : lockEntry.writeLockTransaction != null && lockEntry.writeLockTransaction.length() > 0
-                                ? lockEntry.writeLockTransaction
-                                : lockEntry.readLockTransactions.iterator().next();
+
+        // Return empty block set if no blocking
+        if (suc) {
+            return new HashSet<>();
+        }
+        return genBlockTrancSet(transactionName, lockEntry, pendingWriteTran);
     }
 
-    public String acquireLock(String transactionName, int varID, LockType lockType) {
-        if (!dataTable.containsKey(varID)) return "";
-        String block = checkLock(transactionName, varID, lockType);
-        if (block == null) {
+    private HashSet<String> genBlockTrancSet(String transactionName, LockEntry lockEntry, String pendingWriteTran) {
+        HashSet<String> set = new HashSet<String>();
+        if (pendingWriteTran != null) {
+            set.add(pendingWriteTran);
+        }
+
+        if (lockEntry != null) {
+            String writeTranc = lockEntry.writeLockTransaction;
+            if (writeTranc != null && writeTranc.length() > 0 ) {
+                set.add(writeTranc);
+            }
+    
+            for (String readTranc : lockEntry.readLockTransactions) {
+                if (readTranc != null & readTranc.length() > 0) {
+                    set.add(readTranc);
+                }
+            }
+        }
+        return set;
+    }
+
+    public HashSet<String> acquireLock(String transactionName, int varID, LockType lockType) {
+        if (!dataTable.containsKey(varID)) {
+            return new HashSet<>();
+        }
+
+        HashSet<String> blockTrancSet = checkLock(transactionName, varID, lockType);
+        if (blockTrancSet.isEmpty()) {
             if (!lockTable.containsKey(varID)) {
                 lockTable.put(varID, new LockEntry(lockType, transactionName));
             } else {
@@ -120,9 +145,9 @@ public class DataManager {
                 && pendingWriteTran.equals(transactionName)) {
                 pendingWriteTable.remove(varID);
             }
-            return null;
+            return new HashSet<>();
         }
-        return block;
+        return blockTrancSet;
     }
 
     public boolean setPendingWrite(String transactionName, int varID) {
