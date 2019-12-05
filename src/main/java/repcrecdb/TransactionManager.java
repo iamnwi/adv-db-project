@@ -4,6 +4,7 @@ import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.Scanner;
 import java.util.Map.Entry;
@@ -53,10 +54,6 @@ public class TransactionManager {
     public void run(InputStream inputStream) {
         try (Scanner input = new Scanner(inputStream);) {
             while (!instructionBuffer.isEmpty() || input.hasNextLine()) {
-                boolean hasNewInstr = input.hasNextLine();
-                if (hasNewInstr) {
-                    instructionBuffer.add(input.nextLine());
-                }
                 ticks += 1;
 
                 // Detect deadlock at the start of ticks
@@ -64,6 +61,12 @@ public class TransactionManager {
                 if (list != null) {
                     String trancName = findYoungest(list);
                     abort(trancName, DEADLOCK_ABORT_MESSAGE);
+                }
+
+                // Add new instruction into buffer
+                boolean hasNewInstr = input.hasNextLine();
+                if (hasNewInstr) {
+                    instructionBuffer.add(input.nextLine());
                 }
 
                 // Execute instructions in instruction buffer until one that 
@@ -349,14 +352,18 @@ public class TransactionManager {
             DataManager dm = this.dms.get(siteID);
             dm.releaseLocks(transactionName);
         }
-        this.transactions.remove(transactionName);
-        for (int i = 0; i < instructionBuffer.size(); i++) {
-            String instr = instructionBuffer.get(i);
-            if (instr.contains(transactionName)) {
-                instructionBuffer.remove(i);
+
+        // Remove buffered instructions related to this aborted Transaction
+        Iterator<String> it = instructionBuffer.iterator();
+        while (it.hasNext()) {
+            String instr = it.next();
+            if (instr.contains(transactionName)){
+                it.remove();
             }
         }
+
         waitForGraph.removeNode(transactionName);
+        this.transactions.remove(transactionName);
         System.out.println(String.format("%s aborts(%s)", transactionName, message));
     }
 
@@ -442,6 +449,10 @@ public class TransactionManager {
         state.append("Transactions\n");
         for (Transaction t : transactions.values()) {
             state.append(String.format("- Name: %s%s\tBegin Time: %s\n", t.name, t.isReadOnly ? "(RO)" : "", t.beginTime));
+        }
+        state.append("\nInstruction Buffer\n");
+        for (String instr : instructionBuffer) {
+            state.append(String.format("- %s\n", instr));
         }
         return state.toString();
     }
