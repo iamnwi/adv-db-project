@@ -1,0 +1,4 @@
+x2: 20
+x2: 20
+T2 aborts(Deadlock detected, younger killed)
+T1 commits

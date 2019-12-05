@@ -4,6 +4,7 @@ import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.Scanner;
@@ -169,7 +170,7 @@ public class TransactionManager {
         Integer val = null;
         int upCnt = getUpSiteCount();
         int tryCnt = 1;
-        String blockTrancName = "";
+        HashSet<String> blockTrancSet = new HashSet<>();
         while (val == null) {
             DataManager dm = dms.get(siteID);
             if (t.isReadOnly) {
@@ -181,8 +182,8 @@ public class TransactionManager {
 
                 if (val == null) {
                     if (!isReplicatedData || dm.repVarReadableTable.getOrDefault(varID, false)) {
-                        blockTrancName = dm.acquireLock(transactionName, varID, LockType.READ);
-                        if (blockTrancName == null) {
+                        blockTrancSet = dm.acquireLock(transactionName, varID, LockType.READ);
+                        if (blockTrancSet.isEmpty()) {
                             val = dm.read(transactionName, varID);
                         }
                     }
@@ -200,8 +201,10 @@ public class TransactionManager {
             }
         }
 
-        if (!transactionName.equals(blockTrancName)) {
-            waitForGraph.addEdge(transactionName, blockTrancName);
+        for (String tranc : blockTrancSet) {
+            if (!transactionName.equals(tranc)) {
+                waitForGraph.addEdge(transactionName, tranc);
+            }
         }
 
         return !(val == null);
@@ -217,7 +220,7 @@ public class TransactionManager {
         int upCnt = this.getUpSiteCount();
         if (upCnt == 0) return false;
 
-        String blockTrancName = "";
+        HashSet<String> blockTrancSet = new HashSet<>();
         if (varID % 2 == 0)
         {
             // Acquired write locks from every up site for even index variables
@@ -226,13 +229,11 @@ public class TransactionManager {
                 int siteID = entry.getKey();
                 DataManager dm = dms.get(siteID);
                 if (entry.getValue().status == RunningStatus.UP) {
-                    String checkLockRes = dm.checkLock(transactionName, varID, LockType.WRITE);
-                    if (checkLockRes == null) {
+                    HashSet<String> blockTrancSetTmp = dm.checkLock(transactionName, varID, LockType.WRITE);
+                    if (blockTrancSetTmp.isEmpty()) {
                         acquireLockCnt++;
                     } else {
-                        if (checkLockRes.length() > 0) {
-                            blockTrancName = checkLockRes;
-                        }
+                        blockTrancSet = blockTrancSetTmp;
                     }
                 }
             }
@@ -262,17 +263,14 @@ public class TransactionManager {
                         dm.setPendingWrite(transactionName, varID);
                     }
                 }
-                if (!transactionName.equals(blockTrancName)) {
-                    waitForGraph.addEdge(transactionName, blockTrancName);
-                }
             }
         } else {
             // Acquired write lock from the target site for odd index variables
             int siteID = (varID % 10) + 1;
             DataManager dm = dms.get(siteID);
             if (siteStatusTable.get(siteID).status == RunningStatus.UP) {
-                blockTrancName = dm.acquireLock(transactionName, varID, LockType.WRITE);
-                if (blockTrancName == null) {
+                blockTrancSet = dm.acquireLock(transactionName, varID, LockType.WRITE);
+                if (blockTrancSet.isEmpty()) {
                     WriteRecord writeRec = new WriteRecord(varID, val);
                     writeRec.siteIDs.add(siteID);
                     t.writes.add(writeRec);  // Write to local copy of T, write to site on commit
@@ -284,8 +282,12 @@ public class TransactionManager {
             }
         }
 
-        if (!suc && blockTrancName.length() > 0 && !transactionName.equals(blockTrancName)) {
-                waitForGraph.addEdge(transactionName, blockTrancName);
+        if (!suc) {
+            for (String tranc : blockTrancSet) {
+                if (!transactionName.equals(tranc)) {
+                    waitForGraph.addEdge(transactionName, tranc);
+                }
+            }
         }
         return suc;
     }
