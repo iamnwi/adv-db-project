@@ -21,6 +21,13 @@ reprounzip directory run repcrecdb
 ```
 You should see the detail results of running all the test cases we provided.
 
+You also can run this project using Jar after you **reprounzip** it.
+```
+cd repcrecdb/root/vagrant/adv-db-project
+java -jar build/libs/repcrecdb.jar [input-file]
+```
+All test cases will run if no input file is given.
+
 ### Gradle Build
 
 Tests will run when building with Gradle
