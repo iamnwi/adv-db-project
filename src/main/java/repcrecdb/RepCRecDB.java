@@ -8,6 +8,11 @@ import java.io.InputStream;
 
 public class RepCRecDB {
 
+    /**
+     * Description: create new transaction manager for main program
+     * Input: N/A
+     * Output: return new transaction manager
+     */
     public static TransactionManager init() {
         HashMap<Integer, DataManager> dms = new HashMap<Integer, DataManager>();
         for (int i = 1; i <= 10; i++) {
@@ -16,6 +21,12 @@ public class RepCRecDB {
         return new TransactionManager(dms);
     }
 
+    /**
+     * Description: main program
+     * Input: program arguments
+     * Output: N/A
+     * Side effect: Get input stream, from file or run all test cases
+     */
     public static void main(String[] args) throws Exception {
         TransactionManager tm = init();
 
@@ -32,6 +43,12 @@ public class RepCRecDB {
         }
     }
 
+    /**
+     * Description: run all tests
+     * Input: N/A
+     * Output: N/A
+     * Side effect: run all tests and print out test result
+     */
     private static void runIntegrationTests() {
         File[] files = new File("tests").listFiles();
         for (File file : files) {
