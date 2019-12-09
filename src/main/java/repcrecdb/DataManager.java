@@ -17,6 +17,11 @@ class LockEntry {
     public String writeLockTransaction;
     public HashSet<String> readLockTransactions; // Set<TransactionName>
 
+    /**
+     * Description: initialize all fileds
+     * Input: locktype, transaction name
+     * Output: N/A
+     */
     public LockEntry(LockType lockType, String transactionName) {
         this.lockType = lockType;
         this.readLockTransactions = new HashSet<String>();
@@ -28,6 +33,12 @@ class LockEntry {
         }
     }
 
+    /**
+     * Description: add to lock table according to lock type
+     * Input: lock type, transaction name
+     * Output: succeed or not
+     * Side effect: add to read lock records or write lock record according to lock type
+     */
     public boolean setLock(LockType lockType, String transactionName) {
         this.lockType = lockType;
         if (lockType == LockType.READ) {
@@ -48,6 +59,11 @@ public class DataManager {
     public HashMap<Integer, Boolean> repVarReadableTable; // (varID, isReadable?)
     public TreeMap<Integer, HashMap<Integer, Integer>> snapshots; // (time, map(varID, val))
 
+    /**
+     * Description: initialize site’s data
+     * Input: site ID
+     * Output: N/A
+     */
     public DataManager(int index) {
         siteID = index;
         lockTable = new HashMap<Integer, LockEntry>();
@@ -70,7 +86,11 @@ public class DataManager {
         }
     }
 
-    // checkLock() returns null if lock is available or another transaction's name if it is blocked
+    /**
+     * Description: check is one lock is obtainable
+     * Input: transaction name, variable ID, lock type
+     * Output: a hash set of transaction names if blocked, or empty set if not blocked
+     */
     public HashSet<String> checkLock(String transactionName, int varID, LockType lockType) {
         LockEntry lockEntry = lockTable.get(varID);
         String pendingWriteTran = pendingWriteTable.get(varID);
@@ -104,6 +124,11 @@ public class DataManager {
         return genBlockTrancSet(transactionName, lockEntry, pendingWriteTran);
     }
 
+    /**
+     * Description: genearate set contains all transaction names blocking current transaction
+     * Input: transaction name, lock entry, pending write transaction
+     * Output: a hash set containing all transaction names blocking current transaction
+     */
     private HashSet<String> genBlockTrancSet(String transactionName, LockEntry lockEntry, String pendingWriteTran) {
         HashSet<String> set = new HashSet<String>();
         if (pendingWriteTran != null) {
@@ -125,6 +150,12 @@ public class DataManager {
         return set;
     }
 
+    /**
+     * Description: acquired the required lock if possible
+     * Input: transaction name, variable id, lock type
+     * Output: a hash set of transaction names if blocked, or empty set if not blocked
+     * Side effect: Update lock table if the required lock can be acquired
+     */
     public HashSet<String> acquireLock(String transactionName, int varID, LockType lockType) {
         if (!dataTable.containsKey(varID)) {
             return new HashSet<>();
@@ -150,6 +181,12 @@ public class DataManager {
         return blockTrancSet;
     }
 
+    /**
+     * Description: set one transaction as pending write transaction
+     * Input: transaction name, variable ID
+     * Output: succeed or not
+     * Side effect: transaction will be set as pending write transaction if succeed
+     */
     public boolean setPendingWrite(String transactionName, int varID) {
         if (pendingWriteTable.get(varID) == null) {
             pendingWriteTable.put(varID, transactionName);
@@ -172,6 +209,15 @@ public class DataManager {
         return false;
     }
 
+    /**
+     * Description: release locks obtained by one transaction
+     * Input: transaction name
+     * Output: void
+     * Side effect: 
+     * Release locks obtained by current transaction
+     * Release read lock from lock table if no transaction holding read lock to one variable
+     * Release write lock from lock table if it is a write lock
+     */
     public void releaseLocks(String transactionName) {
         ArrayList<Integer> releasedVarIDs = new ArrayList<Integer>();
         for (Entry<Integer, LockEntry> entry: this.lockTable.entrySet()) {
@@ -196,11 +242,23 @@ public class DataManager {
         }
     }
 
+    /**
+     * Description: Mimic the situation that the given site is down
+     * Input: void
+     * Output: void
+     * Side effect: Erase the lock table and pending write table
+     */
     public void fail() {
         lockTable.clear();
         pendingWriteTable.clear();
     }
 
+    /**
+     * Description: Mimic the situation that the given site is recover from down
+     * Input: void
+     * Output: void
+     * Side effect: Set all replicated variables as non-readable(write-only)
+     */
     public void recover() {
         // Set all replicated variables as non-readable(write-only)
         for (Integer varId : repVarReadableTable.keySet()) {
@@ -208,6 +266,16 @@ public class DataManager {
         }
     }
 
+    /**
+     * Description: Handle transaction’s read instruction
+     * Input: variable ID, transaction type, transaction begin time
+     * Output:
+     * an integer as variable value
+     * null if 
+     *      site is down 
+     *      variable is not available to read for read-write transaction 
+     *      no corresponding snapshot for read-only transaction
+     */
     public Integer read(String transactionName, int varID) {
         LockEntry lockEntry = lockTable.get(varID);
         Integer val = null;
@@ -220,12 +288,29 @@ public class DataManager {
         return val;
     }
 
+    /**
+     * Description: Handle transaction’s readRO instruction
+     * Input: variable ID, transaction begin time
+     * Output:
+     * an integer as variable value
+     * null if no avaiable snapshot
+     */
     public Integer readRO(int varID, int transBeginTime) {
         HashMap<Integer, Integer> snapshot = snapshots.get(transBeginTime);
         if (snapshot == null) return null;
         return snapshot.get(varID);
     }
 
+    /**
+     * Description: Handle transaction’s write instruction
+     * Input: transaction name, variable ID, variable new value
+     * Output:
+     *      true if write completes successfully
+     *      false if not succeed or site is down
+     * Side effect:
+     *      Change the value of current variable to new value 
+     *      If current variable is non-readable, set it to readable
+     */
     public boolean write(String transactionName, int varID, int val) {
         LockEntry lockEntry = lockTable.get(varID);
         if (lockEntry != null
@@ -243,16 +328,32 @@ public class DataManager {
         return false;
     }
 
+    /**
+     * Description: take a snapshot
+     * Input: current time
+     * Output: void
+     * Side effect: take a snapshot of current state and store it in snapshots map
+     */
     public void takeSnapshot(int currentTime) {
         HashMap<Integer, Integer> snapshot = new HashMap<Integer, Integer>();
         snapshot.putAll(dataTable);
         snapshots.put(currentTime, snapshot);
     }
 
+    /**
+     * Description: returns current state of current DM (site)
+     * Input: N/A
+     * Output: a string contains current state
+     */
     public String queryState() {
         return this.toString();
     }
 
+    /**
+     * Description: returns a string contains current state of current DM (site)
+     * Input: N/A
+     * Output: a string contains current state
+     */
     public String toString() {
         TreeMap<Integer, Integer> sorted = new TreeMap<>(); 
         sorted.putAll(dataTable);
