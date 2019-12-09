@@ -1,3 +1,7 @@
+// Test 21.4
+// All transactions should commit.
+// T1 will read 202 for the last read instruction.
+
 fail(1)
 fail(2)
 fail(3)
