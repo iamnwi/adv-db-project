@@ -67,7 +67,13 @@ public class TransactionManager {
                 // Add new instruction into buffer
                 boolean hasNewInstr = input.hasNextLine();
                 if (hasNewInstr) {
-                    instructionBuffer.add(input.nextLine());
+                    String instr = input.nextLine().trim();
+                    // Ignore comment lines and empty lines
+                    if (instr.startsWith("//") || instr.length() == 0) {
+                        ticks -= 1;
+                        continue;
+                    }
+                    instructionBuffer.add(instr);
                 }
 
                 // Execute instructions in instruction buffer until one that 
