@@ -37,6 +37,11 @@ public class TransactionManager {
     Integer ticks; // Mimic a ticking time
     int lastSiteID; // site ID from 1 to 10, workload balancing for replicated data
 
+    /*
+     * Description: initialize all fields 
+     * Input: sites’ DM objects 
+     * Output: N/A
+     */
     public TransactionManager(HashMap<Integer, DataManager> dms) {
         ticks = 0;
         this.dms = dms;
@@ -52,6 +57,16 @@ public class TransactionManager {
         }
     }
 
+    /*
+     * Description: run all the instructions in a given text
+     * Input: instructions text
+     * Output: void
+     * Side effect: 
+     * Add one tick to time when meeting a newline
+     * Parse the instructions text line by line
+     * Append parsed instructions into command buffer one by one
+     * Perform the instructions in the command buffer in orders at each tick
+     */
     public void run(InputStream inputStream) {
         try (Scanner input = new Scanner(inputStream);) {
             while (!instructionBuffer.isEmpty() || input.hasNextLine()) {
@@ -96,6 +111,11 @@ public class TransactionManager {
         }
     }
 
+    /**
+     * Description: Parse a given instruction
+     * Input: one instruction in string, is blocked or not
+     * Output: instruction succeeds or not
+     */
     public boolean parse(String instruction, boolean isBlocked) {
         // Parse command and args
         String[] tokens = instruction.replaceAll("\\)", "").split("\\(");
@@ -139,11 +159,27 @@ public class TransactionManager {
         }
     }
 
+    /**
+     * Description: handle transaction begin instruction
+     * Input: transaction name
+     * Output: succeed or not
+     * Side effect: 
+     * Create Transaction with begin time and type, append to TM transaction list
+     */
     public boolean begin(String transactionName) {
         transactions.put(transactionName, new Transaction(transactionName, ticks));
         return true;
     }
 
+    /**
+     * Description: handle read-only transaction begin instruction
+     * Input: transaction name
+     * Output: succeed or not
+     * Side effect: 
+     * Create Transaction with begin time and type(RO), append to TM transaction list
+     * Notify all up sites to create a snapshot with a given timestamp(the begin time of this Transaction)
+     * Append to the command buffer if blocked(all sites are down, no one can create a snapshot)
+     */
     public boolean beginRO(String transactionName) {
         int downCnt = siteStatusTable.size() - getUpSiteCount();
         if (downCnt > 0) return false;
@@ -155,6 +191,21 @@ public class TransactionManager {
         return true;
     }
 
+    /**
+     * Description: handle transaction read data instruction
+     * Input: transaction name, variable name
+     * Output: succeed or not
+     * Side effect: 
+     * If acquire read lock success:
+     *      Notify the accessed site to update its locks table
+     *      Print the variable value in the format “x{number}: {val}”
+     *      Add accessed site to Transaction’s access sites set
+     * If fail(no sites can provide the read lock for the target variable):
+     *      Add one edge to the wait-for graph if it is a read-write Transaction
+     *      Append to the command buffer if blocked
+     *      Set check deck-lock to true to perform a deadlock at next tick
+     * Update the pointer of next available site
+     */
     public boolean read(String transactionName, String varName) {
         Transaction t = transactions.get(transactionName);
         if (t == null) {
@@ -216,6 +267,21 @@ public class TransactionManager {
         return !(val == null);
     }
 
+    /**
+     * Description: handle transaction write data instruction
+     * Input: transaction name, variable name, the new variable value
+     * Output: succeed or not
+     * Side effect:
+     * Append this command to Transaction’s write command
+     * If acquire write locks success:
+     *      Notify all up sites to update its locks table
+     *      Add accessed site to Transaction’s access sites set
+     * If fail:
+     *      Add edge(s) to the wait-for graph
+     *      Append to the command buffer
+     *      Set check deck-lock to true to perform a deadlock at next tick
+     * Update the pointer of next available site
+     */
     public boolean write(String transactionName, String varName, int val) { 
         int varID = Integer.parseInt(varName.substring(1));
         boolean suc = false;
@@ -298,6 +364,13 @@ public class TransactionManager {
         return suc;
     }
 
+   /**
+    * Description: handle transaction write data instruction 
+    * Input: N/A
+    * Output: succeed or not
+    * Side effect:
+    * Print data tables of all sites(no matter down or up)
+    */
     public boolean dump() {
         for (DataManager dm : dms.values()) {
             System.out.println(dm.toString());
@@ -305,6 +378,16 @@ public class TransactionManager {
         return true;
     }
 
+    /**
+     * Description: Perform a commit validation to see if the given transaction can be committed. If it is a read-write transaction, release all the locks it holds.
+     * Input: transaction name
+     * Output: succeed or not
+     * Side effect: 
+     * Print whether the given transaction is committed or aborted.
+     * Update lock tables of sites that the given transaction accessed.
+     * Update wait-for graph(remove edges related to the given transaction)
+     * If can commit, update data tables of sites that the given transaction accessed.
+     */
     public boolean end(String transactionName) {
         // Check if the sites have been down after T accessed them
         boolean commit = true;
@@ -354,6 +437,15 @@ public class TransactionManager {
         return true;
     }
 
+    /**
+     * Description: Abort one transaction
+     * Input: transaction name, abort reason message
+     * Output: void
+     * Side effect: 
+     * Print whether the given transaction is  aborted.
+     * Update lock tables of sites that the given transaction accessed.
+     * Update wait-for graph(remove edges related to the given transaction)
+     */
     private void abort(String transactionName, String message) {
         Transaction t = this.transactions.get(transactionName);
         for (int siteID: t.accessedSites.keySet()) {
@@ -375,12 +467,28 @@ public class TransactionManager {
         System.out.println(String.format("%s aborts(%s)", transactionName, message));
     }
 
+    /**
+     * Description: Mimic the situation that the given site is down
+     * Input: site id
+     * Output: succeed or not
+     * Side effect: 
+     * Set the status of the given site as down in the site status table
+     * Notify the given site to down
+     */
     public boolean fail(Integer siteID) {
         siteStatusTable.put(siteID, new SiteStatus(RunningStatus.DOWN, ticks));
         dms.get(siteID).fail();
         return true;
     }
 
+    /**
+     * Description: Mimic the situation that the given site is recovered from a failure
+     * Input: site id
+     * Output: succeed or not
+     * Side effect:
+     * Set the status of the given site as up
+     * Notify the given site to recover
+     */
     public boolean recover(Integer siteID) {
         int lastDownTime = siteStatusTable.get(siteID).lastDownTime;
         siteStatusTable.put(siteID, new SiteStatus(RunningStatus.UP, lastDownTime));
@@ -388,6 +496,14 @@ public class TransactionManager {
         return true;
     }
 
+    /**
+     * Description: Print out all status of TM and each DM
+     * Input: void
+     * Output: succeed or not
+     * Side effect:
+     * Print all status in TM
+     * Print all status and data in each DM
+     */
     public boolean queryState() {
         System.out.println(String.join("", Collections.nCopies(70, "-")));
         System.out.println("Transaction Manager");
@@ -410,6 +526,15 @@ public class TransactionManager {
     //  U T I L I T Y   F U N C T I O N S 
     // *************************************
 
+    /**
+     *
+     * Description: Update the counter for blocked instructions for each transaction
+     * Input: transaction name, succeed or not, is blocked or not
+     * Output: void
+     * Side effect:
+     * Increase counter if not succeed and not blocked
+     * Decrease counter if succeed and blocked
+     */
     public void updateBlockedInstrCnt(String tName, boolean suc, boolean isBlocked) {
         Transaction t = this.transactions.get(tName);
         if (t == null) {
@@ -429,7 +554,12 @@ public class TransactionManager {
         }
     }
 
-    // Balance the workload of replicated data accessing
+    /**
+     * Description: find ID of next site to balance the workload of replicated data accessing
+     * Input: N/A
+     * Output: ID of next site
+     * Side effect: N/A
+     */
     public int findNextSite() {
         int maxSiteID = dms.size();
         int tryCnt = 0;
@@ -444,6 +574,12 @@ public class TransactionManager {
         return lastSiteID;
     }
 
+    /**
+     * Description: count how many sites are up
+     * Input: N/A
+     * Output: count of up sites
+     * Side effect: N/A
+     */
     public int getUpSiteCount() {
         int upCnt = 0;
         for (SiteStatus status: siteStatusTable.values()) {
@@ -452,6 +588,12 @@ public class TransactionManager {
         return upCnt;
     }
 
+    /**
+     * Description: convert transaction state to string
+     * Input: N/A
+     * Output: transaction state in string
+     * Side effect: N/A
+     */
     public String toString() {
         StringBuilder state = new StringBuilder();
         state.append("Transactions\n");
@@ -465,6 +607,12 @@ public class TransactionManager {
         return state.toString();
     }
 
+    /**
+     * Description: find the youngest transaction in a loop
+     * Input: array list containing all transactions' names in the loop
+     * Output: transaction name of the youngest in the loop
+     * Side effect: N/A
+     */
     private String findYoungest(ArrayList<String> list) {
         int maxBegin = Integer.MIN_VALUE;
         String maxName = "";

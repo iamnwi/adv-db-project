@@ -24,10 +24,20 @@ public class Transaction {
     ArrayList<WriteRecord> writes;
     Integer blockedInstrCnt;
 
+    /**
+     * Description: initialize non-read-only transaction
+     * Input: transaction name, begin time
+     * Output: N/A
+     */
     public Transaction(String name, Integer ticks) {
         this(name, ticks, false);
     }
 
+    /**
+     * Description: initialize all fields
+     * Input: transaction name, begin time, is read only or not
+     * Output: new transaction
+     */
     public Transaction(String name, Integer ticks, boolean isReadOnly) {
         this.name = name;
         this.isReadOnly = isReadOnly;
@@ -37,6 +47,11 @@ public class Transaction {
         blockedInstrCnt = 0;
     }
 
+    /**
+     * Description: read from local write table
+     * Input: variable id
+     * Output: variable value if exists, null if not
+     */
     public Integer read(int varID) {
         for (int i = this.writes.size() - 1; i >= 0; i--) {
             WriteRecord writeRec = this.writes.get(i);
