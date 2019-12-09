@@ -1,3 +1,7 @@
+// Test 1.1
+// T2 should abort, T1 should not, because of kill youngest
+// T2 operations after abortion should be ignored
+
 begin(T1)
 begin(T2)
 W(T1,x1,101) 
@@ -8,3 +12,8 @@ R(T2,x1)
 R(T2,x2)
 end(T1)
 dump()
+
+// output of dump
+// x1: 101 at site 2
+// x2: 102 at all sites
+// All other variables have their initial values.
