@@ -1,0 +1,19 @@
+// The test case on the project requirement
+begin(T1)
+begin(T2)
+begin(T3)
+W(T1, x1,5)
+W(T3, x2,32)
+// will cause T2 to wait, but the write will go ahead after T1 commits
+W(T2, x1,17)
+end(T1)
+begin(T4)
+W(T4, x4,35)
+W(T3, x5,21)
+W(T4,x2,21)
+// T4 will abort because it’s younger
+W(T3,x4,23)
+end(T3)
+end(T4)
+end(T2)
+dump()

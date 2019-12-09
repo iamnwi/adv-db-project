@@ -272,7 +272,7 @@ class RepCRecDBTest {
                         assert(false);
                     }
                     String res = outContent.toString();
-                    assertEquals(contents, res);
+                    assertEquals(contents.trim(), res.trim());
                     // Reset output to the console
                     PrintStream consoleStream = new PrintStream(new FileOutputStream(FileDescriptor.out));
                     System.setOut(consoleStream);
