@@ -10,6 +10,35 @@ Fall 2019 Advanced Database Course Project
 ## Description
 This is a Fall 2019 Advanced Database course project. For project requirements, please see `project-requirements` PDF.
 
+## How to run
+
+We used **reprozip** to pack our project to allow anyone reproducing this project using **reprounzip** easily.
+
+### Reprounzip
+```
+reprounzip directory setup repcrecdb.rpz repcrecdb
+reprounzip directory run repcrecdb
+```
+You should see the detail results of running all the test cases we provided.
+
+### Gradle Build
+
+Tests will run when building with Gradle
+```
+git clone https://github.com/iamnwi/adv-db-project.git
+cd adv-db-project
+gradle clean
+gradle build
+```
+
+### Run Jar
+
+```
+cd adv-db-project
+java -jar build/libs/repcrecdb.jar [input-file]
+```
+All test cases will run if no input file is given.
+
 ## Architecture
 The architecture of this RepCRec Distributed Database is as follow.
 ![Architecture](imgs/project-arch.png)
