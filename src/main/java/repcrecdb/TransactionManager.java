@@ -36,6 +36,7 @@ public class TransactionManager {
     WaitForGraph waitForGraph;
     Integer ticks; // Mimic a ticking time
     int lastSiteID; // site ID from 1 to 10, workload balancing for replicated data
+    boolean newEdgeAdded;
 
     /*
      * Description: initialize all fields 
@@ -48,6 +49,7 @@ public class TransactionManager {
         transactions = new HashMap<String, Transaction>();
         instructionBuffer = new LinkedList<String>();
         lastSiteID = dms.size();
+        newEdgeAdded = false;
         waitForGraph = new WaitForGraph();
 
         // Initialize the status for each site as up
@@ -72,11 +74,14 @@ public class TransactionManager {
             while (!instructionBuffer.isEmpty() || input.hasNextLine()) {
                 ticks += 1;
 
-                // Detect deadlock at the start of ticks
-                ArrayList<String> list = waitForGraph.detectDeadlock();
-                if (list != null) {
-                    String trancName = findYoungest(list);
-                    abort(trancName, DEADLOCK_ABORT_MESSAGE);
+                // Detect deadlock at the start of ticks when new edge added
+                if (newEdgeAdded) {
+                    newEdgeAdded = false;
+                    ArrayList<String> list = waitForGraph.detectDeadlock();
+                    if (list != null) {
+                        String trancName = findYoungest(list);
+                        abort(trancName, DEADLOCK_ABORT_MESSAGE);
+                    }
                 }
 
                 // Add new instruction into buffer
@@ -261,6 +266,7 @@ public class TransactionManager {
         for (String tranc : blockTrancSet) {
             if (!transactionName.equals(tranc)) {
                 waitForGraph.addEdge(transactionName, tranc);
+                newEdgeAdded = true;
             }
         }
 
@@ -358,6 +364,7 @@ public class TransactionManager {
             for (String tranc : blockTrancSet) {
                 if (!transactionName.equals(tranc)) {
                     waitForGraph.addEdge(transactionName, tranc);
+                    newEdgeAdded = true;
                 }
             }
         }
